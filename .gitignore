@@ -1,0 +1,13 @@
+.env
+.env.local
+
+# Go build/test artifacts
+/tokenguard
+/tokenguard.exe
+*.test
+coverage.out
+.gocache/
+.gomodcache/
+
+# Optional local tiktoken dictionary cache
+.tiktoken-cache/
