@@ -99,7 +99,27 @@ func (e *PricingEngine) PriceForModel(model string) (Price, bool) {
 	return price, ok
 }
 
+func (e *PricingEngine) PriceForProviderModel(provider, model string) (Price, bool) {
+	if e == nil {
+		return Price{}, false
+	}
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	model = strings.TrimSpace(model)
+	if provider != "" && model != "" {
+		for _, key := range []string{provider + "/" + model, provider + ":" + model} {
+			if price, ok := e.prices[key]; ok {
+				return price, true
+			}
+		}
+	}
+	return e.PriceForModel(model)
+}
+
 func (e *PricingEngine) Estimate(model string, inputTokens, maxOutputTokens int64) (CostEstimate, error) {
+	return e.EstimateProvider("", model, inputTokens, maxOutputTokens)
+}
+
+func (e *PricingEngine) EstimateProvider(provider, model string, inputTokens, maxOutputTokens int64) (CostEstimate, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return CostEstimate{}, errors.New("model is required")
@@ -111,8 +131,11 @@ func (e *PricingEngine) Estimate(model string, inputTokens, maxOutputTokens int6
 		return CostEstimate{}, errors.New("max output tokens cannot be negative")
 	}
 
-	price, ok := e.PriceForModel(model)
+	price, ok := e.PriceForProviderModel(provider, model)
 	if !ok {
+		if strings.TrimSpace(provider) != "" {
+			return CostEstimate{}, fmt.Errorf("pricing not found for provider %q model %q", provider, model)
+		}
 		return CostEstimate{}, fmt.Errorf("pricing not found for model %q", model)
 	}
 
@@ -142,10 +165,14 @@ func (e *PricingEngine) Estimate(model string, inputTokens, maxOutputTokens int6
 }
 
 func (e *PricingEngine) CanAfford(model string, inputTokens, maxOutputTokens, availableMicroUSD int64) (CostEstimate, bool, error) {
+	return e.CanAffordProvider("", model, inputTokens, maxOutputTokens, availableMicroUSD)
+}
+
+func (e *PricingEngine) CanAffordProvider(provider, model string, inputTokens, maxOutputTokens, availableMicroUSD int64) (CostEstimate, bool, error) {
 	if availableMicroUSD < 0 {
 		return CostEstimate{}, false, errors.New("available budget cannot be negative")
 	}
-	estimate, err := e.Estimate(model, inputTokens, maxOutputTokens)
+	estimate, err := e.EstimateProvider(provider, model, inputTokens, maxOutputTokens)
 	if err != nil {
 		return CostEstimate{}, false, err
 	}
@@ -153,7 +180,11 @@ func (e *PricingEngine) CanAfford(model string, inputTokens, maxOutputTokens, av
 }
 
 func (e *PricingEngine) ActualCostMicroUSD(model string, inputTokens, outputTokens int64) (int64, error) {
-	estimate, err := e.Estimate(model, inputTokens, outputTokens)
+	return e.ActualCostMicroUSDProvider("", model, inputTokens, outputTokens)
+}
+
+func (e *PricingEngine) ActualCostMicroUSDProvider(provider, model string, inputTokens, outputTokens int64) (int64, error) {
+	estimate, err := e.EstimateProvider(provider, model, inputTokens, outputTokens)
 	if err != nil {
 		return 0, err
 	}

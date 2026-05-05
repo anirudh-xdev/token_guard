@@ -17,6 +17,8 @@ import (
 
 type Handler struct {
 	target                 *url.URL
+	defaultProvider        string
+	providerRoutes         map[string]providerRoute
 	proxy                  *httputil.ReverseProxy
 	tokenEncoder           tokenEncoder
 	tokenizerModel         string
@@ -27,6 +29,7 @@ type Handler struct {
 	asyncLogTimeout        time.Duration
 	maxRequestBytes        int64
 	defaultMaxOutputTokens int64
+	adminSecret            string
 }
 
 type HandlerOption func(*handlerOptions)
@@ -76,6 +79,10 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	routes, err := buildProviderRoutes(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	options := handlerOptions{}
 	for _, opt := range opts {
@@ -94,8 +101,12 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 
 	reverseProxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(target)
-			pr.Out.Host = target.Host
+			route := providerFromContext(pr.In.Context())
+			if route.Upstream == nil {
+				route = providerRoute{Name: cfg.DefaultProvider, Upstream: target}
+			}
+			pr.SetURL(route.Upstream)
+			pr.Out.Host = route.Upstream.Host
 			pr.SetXForwarded()
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -111,6 +122,8 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 
 	return &Handler{
 		target:                 target,
+		defaultProvider:        cfg.DefaultProvider,
+		providerRoutes:         routes,
 		proxy:                  reverseProxy,
 		tokenEncoder:           options.tokenEncoder,
 		tokenizerModel:         cfg.TokenizerModel,
@@ -121,10 +134,20 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 		asyncLogTimeout:        options.asyncLogTimeout,
 		maxRequestBytes:        cfg.MaxRequestBytes,
 		defaultMaxOutputTokens: cfg.DefaultMaxOutputTokens,
+		adminSecret:            cfg.AdminSecret,
 	}, nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	route, ok := selectProviderRoute(r, h.defaultProvider, h.providerRoutes)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "TokenGuard: provider is not configured",
+		})
+		return
+	}
+	r = withProviderRoute(r, route)
+
 	var guard *guardContext
 	if h.guardEnabled() {
 		var ok bool
@@ -132,9 +155,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+	} else {
+		stripTokenGuardHeaders(r)
 	}
 
-	streamWriter := newSSECountingResponseWriter(w, h.tokenEncoder, h.tokenizerModel, h.tokenObserver)
+	streamWriter := newSSECountingResponseWriter(w, h.tokenEncoder, h.tokenizerModel, route.Name, h.tokenObserver)
 	h.proxy.ServeHTTP(streamWriter, r)
 	streamEvent := streamWriter.Finish()
 
@@ -167,7 +192,14 @@ func newTransport() *http.Transport {
 type BudgetStore interface {
 	LookupAPIKey(ctx context.Context, plaintextKey string) (billing.APIKey, error)
 	GetUserBudget(ctx context.Context, userID string) (billing.Budget, error)
+	ReserveBudget(ctx context.Context, userID string, amountMicroUSD int64) (billing.Budget, bool, error)
 	RecordUsage(ctx context.Context, event billing.UsageEvent) error
+	SettleReservedUsage(ctx context.Context, event billing.UsageEvent, reservedMicroUSD int64) error
+	ReleaseReservation(ctx context.Context, userID string, reservedMicroUSD int64) error
+	CreateUser(ctx context.Context, email, name string) (string, error)
+	CreateAPIKey(ctx context.Context, userID, name string) (string, string, error)
+	ListUsers(ctx context.Context) ([]billing.UserBudgetView, error)
+	ListRecentUsage(ctx context.Context, limit int) ([]billing.UsageEvent, error)
 }
 
 type LoopBreaker interface {

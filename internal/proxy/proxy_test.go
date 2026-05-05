@@ -118,6 +118,56 @@ func TestHandlerReturnsBadGatewayOnUpstreamFailure(t *testing.T) {
 	}
 }
 
+func TestHandlerRoutesConfiguredProviderAndStripsTokenGuardHeaders(t *testing.T) {
+	openAICalled := false
+	openAI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openAICalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer openAI.Close()
+
+	anthropic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get(tokenGuardProviderHeader); got != "" {
+			t.Fatalf("upstream received provider header %q", got)
+		}
+		if got := r.Header.Get(tokenGuardAPIKeyHeader); got != "" {
+			t.Fatalf("upstream received TokenGuard api key %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer anthropic.Close()
+
+	handler, err := NewHandler(Config{
+		ListenAddr:        ":0",
+		UpstreamURL:       openAI.URL,
+		DefaultProvider:   providerOpenAI,
+		ProviderRoutes:    map[string]string{providerOpenAI: openAI.URL, providerAnthropic: anthropic.URL},
+		GuardEnabled:      false,
+		TokenizerModel:    "gpt-4",
+		MaxRequestBytes:   1024,
+		ReadHeaderTimeout: time.Second,
+		ShutdownTimeout:   time.Second,
+	}, withTokenEncoder(fakeTokenEncoder{}))
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-test"}`))
+	req.Header.Set(tokenGuardProviderHeader, providerAnthropic)
+	req.Header.Set(tokenGuardAPIKeyHeader, "tg_test")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	if openAICalled {
+		t.Fatal("default OpenAI upstream was called for Anthropic request")
+	}
+}
+
 func TestHandlerCountsSSEStreamWithoutChangingBody(t *testing.T) {
 	const first = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n"
 	const second = "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n"
@@ -318,6 +368,41 @@ func TestHandlerLogsCompletedUsageAndStripsHeaders(t *testing.T) {
 	}
 }
 
+func TestHandlerLogsProviderUsageFromJSONResponse(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"usage":{"prompt_tokens":5,"completion_tokens":7,"total_tokens":12},"choices":[{"message":{"content":"done"}}]}`))
+	}))
+	defer upstream.Close()
+
+	store := newFakeBudgetStore(100000)
+	pricing := mustTestPricing(t)
+	handler, err := NewHandler(Config{
+		ListenAddr:  ":0",
+		UpstreamURL: upstream.URL,
+	}, withTokenEncoder(fakeTokenEncoder{}), WithGuard(store, pricing, fakeLoopBreaker{}), WithAsyncLogTimeout(time.Second))
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-test","max_tokens":20,"messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set(tokenGuardAPIKeyHeader, "tg_test")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	event := waitUsageEvent(t, store.events)
+	if event.InputTokens != 5 {
+		t.Fatalf("InputTokens = %d, want provider-reported 5", event.InputTokens)
+	}
+	if event.OutputTokens != 7 {
+		t.Fatalf("OutputTokens = %d, want provider-reported 7", event.OutputTokens)
+	}
+}
+
 type fakeBudgetStore struct {
 	apiKey billing.APIKey
 	budget billing.Budget
@@ -349,6 +434,17 @@ func (s *fakeBudgetStore) GetUserBudget(ctx context.Context, userID string) (bil
 	return s.budget, nil
 }
 
+func (s *fakeBudgetStore) ReserveBudget(ctx context.Context, userID string, amountMicroUSD int64) (billing.Budget, bool, error) {
+	if userID != s.budget.UserID {
+		return billing.Budget{}, false, billing.ErrBudgetNotFound
+	}
+	if amountMicroUSD > s.budget.AvailableMicroUSD() {
+		return s.budget, false, nil
+	}
+	s.budget.ReservedMicroUSD += amountMicroUSD
+	return s.budget, true, nil
+}
+
 func (s *fakeBudgetStore) RecordUsage(ctx context.Context, event billing.UsageEvent) error {
 	select {
 	case s.events <- event:
@@ -356,6 +452,46 @@ func (s *fakeBudgetStore) RecordUsage(ctx context.Context, event billing.UsageEv
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (s *fakeBudgetStore) SettleReservedUsage(ctx context.Context, event billing.UsageEvent, reservedMicroUSD int64) error {
+	if reservedMicroUSD > 0 {
+		s.budget.ReservedMicroUSD -= reservedMicroUSD
+		if s.budget.ReservedMicroUSD < 0 {
+			s.budget.ReservedMicroUSD = 0
+		}
+		if event.Status == "completed" {
+			s.budget.SpentMicroUSD += event.ActualCostMicroUSD
+		}
+	}
+	return s.RecordUsage(ctx, event)
+}
+
+func (s *fakeBudgetStore) ReleaseReservation(ctx context.Context, userID string, reservedMicroUSD int64) error {
+	if userID != s.budget.UserID {
+		return billing.ErrBudgetNotFound
+	}
+	s.budget.ReservedMicroUSD -= reservedMicroUSD
+	if s.budget.ReservedMicroUSD < 0 {
+		s.budget.ReservedMicroUSD = 0
+	}
+	return nil
+}
+
+func (s *fakeBudgetStore) CreateUser(ctx context.Context, email, name string) (string, error) {
+	return "user_created", nil
+}
+
+func (s *fakeBudgetStore) CreateAPIKey(ctx context.Context, userID, name string) (string, string, error) {
+	return "key_created", "tg_created", nil
+}
+
+func (s *fakeBudgetStore) ListUsers(ctx context.Context) ([]billing.UserBudgetView, error) {
+	return nil, nil
+}
+
+func (s *fakeBudgetStore) ListRecentUsage(ctx context.Context, limit int) ([]billing.UsageEvent, error) {
+	return nil, nil
 }
 
 type fakeLoopBreaker struct {

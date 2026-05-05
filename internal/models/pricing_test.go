@@ -63,6 +63,30 @@ func TestCanAffordComparesAgainstAvailableBudget(t *testing.T) {
 	}
 }
 
+func TestProviderPricingPrefersProviderScopedModel(t *testing.T) {
+	engine, err := NewPricingEngine(map[string]Price{
+		"shared-model": {
+			InputCostPer1KMicroUSD:  1000,
+			OutputCostPer1KMicroUSD: 1000,
+		},
+		"anthropic/shared-model": {
+			InputCostPer1KMicroUSD:  2000,
+			OutputCostPer1KMicroUSD: 4000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPricingEngine returned error: %v", err)
+	}
+
+	estimate, err := engine.EstimateProvider("anthropic", "shared-model", 1000, 1000)
+	if err != nil {
+		t.Fatalf("EstimateProvider returned error: %v", err)
+	}
+	if estimate.EstimatedTotalCostMicroUSD != 6000 {
+		t.Fatalf("EstimatedTotalCostMicroUSD = %d, want provider scoped price", estimate.EstimatedTotalCostMicroUSD)
+	}
+}
+
 func TestActualCostMicroUSDUsesObservedOutputTokens(t *testing.T) {
 	engine, err := NewPricingEngine(map[string]Price{
 		"test-model": {

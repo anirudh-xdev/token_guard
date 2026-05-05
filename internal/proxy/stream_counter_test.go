@@ -13,7 +13,7 @@ func (fakeTokenEncoder) Count(text string) int {
 
 func TestSSETokenCounterHandlesSplitEvents(t *testing.T) {
 	var events []StreamTokenEvent
-	counter := newSSETokenCounter(fakeTokenEncoder{}, "test-model", func(event StreamTokenEvent) {
+	counter := newSSETokenCounter(fakeTokenEncoder{}, "test-model", providerOpenAI, func(event StreamTokenEvent) {
 		events = append(events, event)
 	})
 
@@ -43,5 +43,32 @@ func TestExtractStreamTextCoversOpenAIAndToolDeltas(t *testing.T) {
 	want := `Hello|lookup|{"q":"cost"}`
 	if got != want {
 		t.Fatalf("extractStreamText = %q, want %q", got, want)
+	}
+}
+
+func TestExtractStreamTextCoversAnthropicContentDelta(t *testing.T) {
+	data := []byte(`{"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}`)
+
+	got := strings.Join(extractStreamText(data), "|")
+	if got != "hello" {
+		t.Fatalf("extractStreamText = %q, want hello", got)
+	}
+}
+
+func TestJSONUsageExtractionCoversOpenAIAndAnthropic(t *testing.T) {
+	openAIUsage, ok := extractUsage([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}`))
+	if !ok {
+		t.Fatal("extractUsage returned ok=false for OpenAI usage")
+	}
+	if openAIUsage.InputTokens != 10 || openAIUsage.OutputTokens != 3 {
+		t.Fatalf("OpenAI usage = %#v, want input=10 output=3", openAIUsage)
+	}
+
+	anthropicUsage, ok := extractUsage([]byte(`{"usage":{"input_tokens":8,"output_tokens":5}}`))
+	if !ok {
+		t.Fatal("extractUsage returned ok=false for Anthropic usage")
+	}
+	if anthropicUsage.InputTokens != 8 || anthropicUsage.OutputTokens != 5 {
+		t.Fatalf("Anthropic usage = %#v, want input=8 output=5", anthropicUsage)
 	}
 }

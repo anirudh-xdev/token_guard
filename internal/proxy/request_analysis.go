@@ -18,6 +18,7 @@ const (
 )
 
 type requestAnalysis struct {
+	Provider        string
 	Model           string
 	InputTokens     int64
 	MaxOutputTokens int64
@@ -70,13 +71,19 @@ func stripTokenGuardHeaders(r *http.Request) {
 	r.Header.Del(tokenGuardAPIKeyHeader)
 	r.Header.Del(tokenGuardAPIKeyAltHeader)
 	r.Header.Del(tokenGuardSessionHeader)
+	r.Header.Del(tokenGuardProviderHeader)
 }
 
 func analyzeRequest(r *http.Request, body []byte, encoder tokenEncoder, defaultMaxOutputTokens int64) (requestAnalysis, error) {
+	route := providerFromContext(r.Context())
 	analysis := requestAnalysis{
+		Provider:        route.Name,
 		SessionID:       sessionIDFromHeaders(r.Header),
 		MaxOutputTokens: defaultMaxOutputTokens,
 		SemanticPayload: compactOrCopy(body),
+	}
+	if analysis.Provider == "" {
+		analysis.Provider = providerOpenAI
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
 		return analysis, nil
@@ -91,6 +98,8 @@ func analyzeRequest(r *http.Request, body []byte, encoder tokenEncoder, defaultM
 	if maxOutputTokens, ok := jsonInt64(root["max_completion_tokens"]); ok {
 		analysis.MaxOutputTokens = maxOutputTokens
 	} else if maxOutputTokens, ok := jsonInt64(root["max_tokens"]); ok {
+		analysis.MaxOutputTokens = maxOutputTokens
+	} else if maxOutputTokens, ok := jsonInt64(root["max_output_tokens"]); ok {
 		analysis.MaxOutputTokens = maxOutputTokens
 	}
 	if analysis.MaxOutputTokens < 0 {
@@ -129,7 +138,7 @@ func countRequestInputTokens(root map[string]json.RawMessage, body []byte, encod
 	}
 
 	var total int64
-	for _, field := range []string{"messages", "input", "prompt", "instructions", "tools", "functions"} {
+	for _, field := range []string{"messages", "input", "prompt", "instructions", "system", "tools", "functions"} {
 		total += countJSONText(root[field], encoder)
 	}
 	if total > 0 {
@@ -175,7 +184,7 @@ func countAnyText(value any, encoder tokenEncoder) int64 {
 
 func semanticPayload(root map[string]json.RawMessage, body []byte) []byte {
 	semantic := make(map[string]json.RawMessage, 8)
-	for _, field := range []string{"model", "messages", "input", "prompt", "instructions", "tools", "tool_choice", "functions"} {
+	for _, field := range []string{"model", "messages", "input", "prompt", "instructions", "system", "tools", "tool_choice", "functions"} {
 		if raw := bytes.TrimSpace(root[field]); len(raw) > 0 {
 			semantic[field] = append(json.RawMessage(nil), raw...)
 		}

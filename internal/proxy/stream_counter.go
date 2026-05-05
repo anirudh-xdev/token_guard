@@ -16,9 +16,11 @@ type StreamTokenEvent struct {
 	Model          string
 	Tokens         int
 	TotalTokens    int64
+	InputTokens    int64
 	TextBytes      int
 	TotalTextBytes int64
 	Done           bool
+	ProviderUsage  bool
 }
 
 type StreamTokenObserver func(StreamTokenEvent)
@@ -56,10 +58,10 @@ type sseCountingResponseWriter struct {
 	status  int
 }
 
-func newSSECountingResponseWriter(w http.ResponseWriter, encoder tokenEncoder, model string, observer StreamTokenObserver) *sseCountingResponseWriter {
+func newSSECountingResponseWriter(w http.ResponseWriter, encoder tokenEncoder, model, provider string, observer StreamTokenObserver) *sseCountingResponseWriter {
 	return &sseCountingResponseWriter{
 		ResponseWriter: w,
-		counter:        newSSETokenCounter(encoder, model, observer),
+		counter:        newSSETokenCounter(encoder, model, provider, observer),
 	}
 }
 
@@ -73,8 +75,13 @@ func (w *sseCountingResponseWriter) WriteHeader(status int) {
 
 func (w *sseCountingResponseWriter) Write(p []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(p)
-	if n > 0 && w.shouldCount() {
-		w.counter.Write(p[:n])
+	if n > 0 {
+		switch {
+		case w.shouldCount():
+			w.counter.Write(p[:n])
+		case w.shouldCaptureJSON():
+			w.counter.CaptureJSON(p[:n])
+		}
 	}
 	return n, err
 }
@@ -108,24 +115,40 @@ func (w *sseCountingResponseWriter) shouldCount() bool {
 	return strings.Contains(contentType, eventStreamContentType)
 }
 
+func (w *sseCountingResponseWriter) shouldCaptureJSON() bool {
+	if w.status != 0 && (w.status < http.StatusOK || w.status >= http.StatusMultipleChoices) {
+		return false
+	}
+	contentType := strings.ToLower(w.Header().Get("Content-Type"))
+	return strings.Contains(contentType, "application/json") || strings.Contains(contentType, "+json")
+}
+
 type sseTokenCounter struct {
 	encoder  tokenEncoder
 	model    string
+	provider string
 	observer StreamTokenObserver
 
 	line      []byte
 	eventData []byte
+	jsonBody  []byte
 
 	totalTokens    int64
+	inputTokens    int64
 	totalTextBytes int64
 	seenStream     bool
+	seenJSON       bool
+	truncatedJSON  bool
 	finished       bool
 }
 
-func newSSETokenCounter(encoder tokenEncoder, model string, observer StreamTokenObserver) *sseTokenCounter {
+const maxUsageJSONBytes = 1 << 20
+
+func newSSETokenCounter(encoder tokenEncoder, model, provider string, observer StreamTokenObserver) *sseTokenCounter {
 	return &sseTokenCounter{
 		encoder:  encoder,
 		model:    model,
+		provider: provider,
 		observer: observer,
 	}
 }
@@ -163,17 +186,35 @@ func (c *sseTokenCounter) Finish() StreamTokenEvent {
 	if len(c.eventData) > 0 {
 		c.processEvent()
 	}
+	if c.seenJSON && !c.truncatedJSON {
+		c.processProviderUsage(c.jsonBody)
+	}
 
 	event := StreamTokenEvent{
 		Model:          c.model,
 		TotalTokens:    c.totalTokens,
+		InputTokens:    c.inputTokens,
 		TotalTextBytes: c.totalTextBytes,
 		Done:           true,
+		ProviderUsage:  c.seenJSON,
 	}
-	if c.seenStream && c.observer != nil {
+	if (c.seenStream || c.seenJSON) && c.observer != nil {
 		c.observer(event)
 	}
 	return event
+}
+
+func (c *sseTokenCounter) CaptureJSON(p []byte) {
+	if c == nil || c.finished || len(p) == 0 || c.truncatedJSON {
+		return
+	}
+	c.seenJSON = true
+	if len(c.jsonBody)+len(p) > maxUsageJSONBytes {
+		c.truncatedJSON = true
+		c.jsonBody = nil
+		return
+	}
+	c.jsonBody = append(c.jsonBody, p...)
 }
 
 func (c *sseTokenCounter) processLine(line []byte) {
@@ -227,19 +268,26 @@ func (c *sseTokenCounter) processEvent() {
 
 type streamChunk struct {
 	Delta      json.RawMessage `json:"delta"`
+	Type       string          `json:"type"`
 	Text       string          `json:"text"`
 	Completion string          `json:"completion"`
+	Content    []contentBlock  `json:"content"`
+	Usage      usagePayload    `json:"usage"`
+	Message    streamMessage   `json:"message"`
 	Choices    []streamChoice  `json:"choices"`
 }
 
 type streamChoice struct {
-	Delta json.RawMessage `json:"delta"`
-	Text  string          `json:"text"`
+	Delta        json.RawMessage `json:"delta"`
+	Text         string          `json:"text"`
+	Message      streamMessage   `json:"message"`
+	FinishReason string          `json:"finish_reason"`
 }
 
 type streamDelta struct {
-	Content   string           `json:"content"`
+	Content   any              `json:"content"`
 	Text      string           `json:"text"`
+	Thinking  string           `json:"thinking"`
 	ToolCalls []streamToolCall `json:"tool_calls"`
 }
 
@@ -250,6 +298,27 @@ type streamToolCall struct {
 type streamToolFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
+}
+
+type streamMessage struct {
+	Content string       `json:"content"`
+	Usage   usagePayload `json:"usage"`
+}
+
+type contentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type usagePayload struct {
+	PromptTokens         int64 `json:"prompt_tokens"`
+	CompletionTokens     int64 `json:"completion_tokens"`
+	InputTokens          int64 `json:"input_tokens"`
+	OutputTokens         int64 `json:"output_tokens"`
+	TotalTokens          int64 `json:"total_tokens"`
+	PromptTokenCount     int64 `json:"promptTokenCount"`
+	CandidatesTokenCount int64 `json:"candidatesTokenCount"`
+	TotalTokenCount      int64 `json:"totalTokenCount"`
 }
 
 func extractStreamText(data []byte) []string {
@@ -268,9 +337,14 @@ func extractStreamText(data []byte) []string {
 	appendIfNotEmpty(chunk.Text)
 	appendIfNotEmpty(chunk.Completion)
 	appendDeltaText(chunk.Delta, appendIfNotEmpty)
+	for _, block := range chunk.Content {
+		appendIfNotEmpty(block.Text)
+	}
+	appendIfNotEmpty(chunk.Message.Content)
 
 	for _, choice := range chunk.Choices {
 		appendIfNotEmpty(choice.Text)
+		appendIfNotEmpty(choice.Message.Content)
 		appendDeltaText(choice.Delta, appendIfNotEmpty)
 	}
 
@@ -293,10 +367,114 @@ func appendDeltaText(raw json.RawMessage, appendText func(string)) {
 	if err := json.Unmarshal(raw, &delta); err != nil {
 		return
 	}
-	appendText(delta.Content)
+	appendContentText(delta.Content, appendText)
 	appendText(delta.Text)
+	appendText(delta.Thinking)
 	for _, toolCall := range delta.ToolCalls {
 		appendText(toolCall.Function.Name)
 		appendText(toolCall.Function.Arguments)
 	}
+}
+
+func appendContentText(value any, appendText func(string)) {
+	switch typed := value.(type) {
+	case nil:
+		return
+	case string:
+		appendText(typed)
+	case []any:
+		for _, item := range typed {
+			appendContentText(item, appendText)
+		}
+	case map[string]any:
+		if text, ok := typed["text"].(string); ok {
+			appendText(text)
+		}
+		if content, ok := typed["content"]; ok {
+			appendContentText(content, appendText)
+		}
+	}
+}
+
+func (c *sseTokenCounter) processProviderUsage(raw []byte) {
+	usage, ok := extractUsage(raw)
+	if !ok {
+		for _, text := range extractResponseText(raw) {
+			if text == "" || c.encoder == nil {
+				continue
+			}
+			c.totalTokens += int64(c.encoder.Count(text))
+		}
+		return
+	}
+	if usage.InputTokens > 0 {
+		c.inputTokens = usage.InputTokens
+	}
+	if usage.OutputTokens > 0 {
+		c.totalTokens = usage.OutputTokens
+	}
+}
+
+func extractUsage(raw []byte) (struct {
+	InputTokens  int64
+	OutputTokens int64
+}, bool) {
+	var root struct {
+		Usage         usagePayload `json:"usage"`
+		UsageMetadata usagePayload `json:"usageMetadata"`
+	}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return struct {
+			InputTokens  int64
+			OutputTokens int64
+		}{}, false
+	}
+
+	input := firstPositive(root.Usage.InputTokens, root.Usage.PromptTokens, root.UsageMetadata.PromptTokenCount)
+	output := firstPositive(root.Usage.OutputTokens, root.Usage.CompletionTokens, root.UsageMetadata.CandidatesTokenCount)
+	if output == 0 {
+		total := firstPositive(root.Usage.TotalTokens, root.UsageMetadata.TotalTokenCount)
+		if total > input {
+			output = total - input
+		}
+	}
+	return struct {
+		InputTokens  int64
+		OutputTokens int64
+	}{InputTokens: input, OutputTokens: output}, input > 0 || output > 0
+}
+
+func extractResponseText(raw []byte) []string {
+	var root streamChunk
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil
+	}
+	var texts []string
+	appendIfNotEmpty := func(text string) {
+		if text != "" {
+			texts = append(texts, text)
+		}
+	}
+	appendIfNotEmpty(root.Text)
+	appendIfNotEmpty(root.Completion)
+	appendDeltaText(root.Delta, appendIfNotEmpty)
+	for _, block := range root.Content {
+		appendIfNotEmpty(block.Text)
+	}
+	appendIfNotEmpty(root.Message.Content)
+	for _, choice := range root.Choices {
+		appendIfNotEmpty(choice.Text)
+		appendIfNotEmpty(choice.Message.Content)
+		appendDeltaText(choice.Delta, appendIfNotEmpty)
+	}
+	return texts
+}
+
+func firstPositive(values ...int64) int64 {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }

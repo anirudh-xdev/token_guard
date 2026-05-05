@@ -8,8 +8,11 @@ import (
 func TestConfigFromEnvUsesDefaults(t *testing.T) {
 	t.Setenv(listenAddrEnv, "")
 	t.Setenv(upstreamURLEnv, "")
+	t.Setenv(defaultProviderEnv, "")
+	t.Setenv(providerRoutesEnv, "")
 	t.Setenv(tokenizerModelEnv, "")
 	t.Setenv(guardEnabledEnv, "")
+	t.Setenv(managementEnabledEnv, "")
 	t.Setenv(defaultMaxOutputTokensEnv, "")
 	t.Setenv(maxRequestBytesEnv, "")
 	t.Setenv(readHeaderTimeoutMillisEnv, "")
@@ -25,11 +28,20 @@ func TestConfigFromEnvUsesDefaults(t *testing.T) {
 	if cfg.UpstreamURL != defaultUpstreamURL {
 		t.Fatalf("UpstreamURL = %q, want %q", cfg.UpstreamURL, defaultUpstreamURL)
 	}
+	if cfg.DefaultProvider != defaultProviderName {
+		t.Fatalf("DefaultProvider = %q, want %q", cfg.DefaultProvider, defaultProviderName)
+	}
+	if cfg.ProviderRoutes[defaultProviderName] != defaultUpstreamURL {
+		t.Fatalf("default provider route = %q, want %q", cfg.ProviderRoutes[defaultProviderName], defaultUpstreamURL)
+	}
 	if cfg.TokenizerModel != defaultTokenizerModel {
 		t.Fatalf("TokenizerModel = %q, want %q", cfg.TokenizerModel, defaultTokenizerModel)
 	}
 	if !cfg.GuardEnabled {
 		t.Fatal("GuardEnabled = false, want true by default")
+	}
+	if cfg.ManagementEnabled {
+		t.Fatal("ManagementEnabled = true, want false by default")
 	}
 	if cfg.DefaultMaxOutputTokens != defaultMaxOutputTokens {
 		t.Fatalf("DefaultMaxOutputTokens = %d, want %d", cfg.DefaultMaxOutputTokens, defaultMaxOutputTokens)
@@ -45,8 +57,11 @@ func TestConfigFromEnvUsesDefaults(t *testing.T) {
 func TestConfigFromEnvParsesTimeouts(t *testing.T) {
 	t.Setenv(listenAddrEnv, ":9090")
 	t.Setenv(upstreamURLEnv, "https://example.test")
+	t.Setenv(defaultProviderEnv, "anthropic")
+	t.Setenv(providerRoutesEnv, "anthropic=https://api.anthropic.com,openrouter=https://openrouter.ai/api")
 	t.Setenv(tokenizerModelEnv, "gpt-4o")
 	t.Setenv(guardEnabledEnv, "false")
+	t.Setenv(managementEnabledEnv, "false")
 	t.Setenv(defaultMaxOutputTokensEnv, "1024")
 	t.Setenv(maxRequestBytesEnv, "2048")
 	t.Setenv(readHeaderTimeoutMillisEnv, "1500")
@@ -61,6 +76,12 @@ func TestConfigFromEnvParsesTimeouts(t *testing.T) {
 	}
 	if cfg.UpstreamURL != "https://example.test" {
 		t.Fatalf("UpstreamURL = %q, want https://example.test", cfg.UpstreamURL)
+	}
+	if cfg.DefaultProvider != "anthropic" {
+		t.Fatalf("DefaultProvider = %q, want anthropic", cfg.DefaultProvider)
+	}
+	if cfg.ProviderRoutes["openrouter"] != "https://openrouter.ai/api" {
+		t.Fatalf("openrouter route = %q, want configured URL", cfg.ProviderRoutes["openrouter"])
 	}
 	if cfg.TokenizerModel != "gpt-4o" {
 		t.Fatalf("TokenizerModel = %q, want gpt-4o", cfg.TokenizerModel)
@@ -85,5 +106,24 @@ func TestConfigFromEnvParsesTimeouts(t *testing.T) {
 func TestParseUpstreamURLRejectsMissingHost(t *testing.T) {
 	if _, err := parseUpstreamURL("https://"); err == nil {
 		t.Fatal("parseUpstreamURL returned nil error for missing host")
+	}
+}
+
+func TestManagementRequiresAdminSecret(t *testing.T) {
+	cfg := Config{
+		ListenAddr:             ":8080",
+		UpstreamURL:            "https://api.openai.com",
+		DefaultProvider:        "openai",
+		ProviderRoutes:         map[string]string{"openai": "https://api.openai.com"},
+		TokenizerModel:         "gpt-4",
+		ManagementEnabled:      true,
+		AdminSecret:            "short",
+		ReadHeaderTimeout:      time.Second,
+		ShutdownTimeout:        time.Second,
+		MaxRequestBytes:        1,
+		DefaultMaxOutputTokens: 1,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate returned nil error for short admin secret")
 	}
 }

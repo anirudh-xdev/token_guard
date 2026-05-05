@@ -25,6 +25,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("proxy config: %v", err)
 	}
+	if config.ManagementEnabled && !config.GuardEnabled {
+		log.Fatal("management endpoints require TOKENGUARD_GUARD_ENABLED=true")
+	}
 
 	var options []proxy.HandlerOption
 	if config.GuardEnabled {
@@ -86,6 +89,11 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	if config.ManagementEnabled {
+		mux.HandleFunc("/mgmt/provision", handler.HandleProvision)
+		mux.HandleFunc("/mgmt/users", handler.HandleListUsers)
+		mux.HandleFunc("/mgmt/usage", handler.HandleListUsage)
+	}
 	mux.Handle("/", handler)
 
 	server := &http.Server{
