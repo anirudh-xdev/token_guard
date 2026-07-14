@@ -1,0 +1,23 @@
+---
+description: Billing ledger and Redis loop breaker invariants
+globs: "internal/billing/**,internal/cache/**"
+alwaysApply: false
+---
+
+# Billing and cache
+
+## Billing (Turso)
+
+- Schema lives in `schema.go`; migrate via `store.Migrate`
+- Budget model: `limit_microusd`, `spent_microusd`, `reserved_microusd`
+- Reserve before forward; settle actual; release unused reservation
+- API keys: store `key_hash` + `key_prefix` only
+- Usage statuses: `allowed`, `blocked_budget`, `blocked_loop`, `provider_error`, `completed`
+
+## Cache (Upstash)
+
+- REST client only (no Redis TCP protocol assumption)
+- Circuit breaker: INCR + EXPIRE on session+payload hash; trip at `TOKENGUARD_LOOP_THRESHOLD`
+- Guarded mode must fail closed if Redis ping/ops fail
+
+Keep micro-USD math integer-only. Schema changes need matching store methods and tests.

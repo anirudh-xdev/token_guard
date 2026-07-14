@@ -1,0 +1,25 @@
+---
+description: TokenGuard product mental model and hard invariants for every session
+alwaysApply: true
+---
+
+# TokenGuard overview
+
+TokenGuard is a Go reverse proxy / financial firewall for LLM APIs.
+
+- Guarded mode: Turso budgets + usage, Upstash Redis loop breaker, `pricing.json` costs
+- Proxy-only: `TOKENGUARD_GUARD_ENABLED=false` (no budget/loop)
+- Mgmt/dashboard require guard enabled and `TOKENGUARD_ADMIN_SECRET` (16+ chars)
+
+## Always
+
+- Read `AGENTS.md` and `docs/STRUCTURE.md` before large changes
+- Keep money as micro-USD integers; never invent model prices in code
+- Strip `X-TokenGuard-*` before upstream; pass provider auth through
+- Prefer env config (document in `.env.example`) over CLI flags
+
+## Do not
+
+- Enable mgmt without guard wiring
+- Store plaintext API keys in the DB
+- Soft-fail open on missing Redis/Turso in guarded mode

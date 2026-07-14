@@ -1,0 +1,23 @@
+---
+description: Go conventions for TokenGuard packages
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Go conventions
+
+- Module path: `tokenguard`; packages under `internal/`
+- Load config via `*FromEnv` helpers; validate in `Validate` / constructors
+- Use `context.Context` on store and cache calls
+- Return JSON errors with `writeJSON` patterns already in `internal/proxy`
+- Add table-driven tests next to the package (`*_test.go`)
+- Log operational failures with `log.Printf`; do not panic in handlers
+- Keep handlers thin: parse → call store/breaker → write response
+
+```go
+// Prefer explicit errors over silent defaults for money/auth paths
+cfg, err := proxy.ConfigFromEnv()
+if err != nil {
+    return err
+}
+```

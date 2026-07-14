@@ -2,6 +2,8 @@
 
 TokenGuard is a financial firewall for AI apps. It sits between your application and LLM providers such as OpenAI, Anthropic Claude, OpenRouter, Groq, Mistral, and other OpenAI-compatible APIs.
 
+For product overview, architecture, and agent guidance, see [docs/INDEX.md](docs/INDEX.md), [README.md](README.md), and [AGENTS.md](AGENTS.md).
+
 Instead of sending requests directly to an AI provider, your app sends them to TokenGuard first. TokenGuard checks budget, estimates cost, detects repeated agent loops, tracks usage, and only forwards safe requests to the provider.
 
 ## What Problem It Solves
@@ -61,9 +63,10 @@ Use this mode to check that TokenGuard boots without Turso or Upstash credential
 ```powershell
 $env:TOKENGUARD_GUARD_ENABLED='false'
 $env:TOKENGUARD_LISTEN_ADDR='127.0.0.1:18080'
-$env:TIKTOKEN_CACHE_DIR='C:\Users\aniru\Desktop\TokenGuard\.tiktoken-cache'
+$env:TIKTOKEN_CACHE_DIR='.tiktoken-cache'
 
-& 'C:\Users\aniru\Desktop\TokenGuard\tokenguard.exe'
+go run ./cmd/tokenguard
+# Or: go build -o tokenguard.exe ./cmd/tokenguard; .\tokenguard.exe
 ```
 
 In another terminal:
@@ -104,10 +107,11 @@ TOKENGUARD_MGMT_ENABLED=true
 TOKENGUARD_ADMIN_SECRET=make-this-at-least-16-chars
 ```
 
-Then run:
+Then run from the repo root:
 
 ```powershell
-& 'C:\Users\aniru\Desktop\TokenGuard\tokenguard.exe'
+go build -o tokenguard.exe ./cmd/tokenguard
+.\tokenguard.exe
 ```
 
 TokenGuard will:
