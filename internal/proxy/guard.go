@@ -343,6 +343,24 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+// writeManagementJSON writes JSON for /mgmt/* routes and includes CORS headers
+// so the admin dashboard can call the API cross-origin when needed.
+func writeManagementJSON(w http.ResponseWriter, status int, payload any) {
+	setManagementCORSHeaders(w)
+	writeJSON(w, status, payload)
+}
+
+func setManagementCORSHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-TokenGuard-Admin-Secret")
+}
+
+func writeManagementOptions(w http.ResponseWriter) {
+	setManagementCORSHeaders(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func modelOrUnknown(model string) string {
 	model = strings.TrimSpace(model)
 	if model == "" {

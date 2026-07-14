@@ -31,7 +31,7 @@ From `go.mod`:
 
 | Piece | Detail |
 |-------|--------|
-| `dashboard.html` | Vanilla HTML/JS admin UI; no build step, no SPA framework |
+| `internal/ui/dashboard.html` | Vanilla HTML/JS admin UI; embedded at build time via `go:embed` |
 
 ## Data and pricing
 

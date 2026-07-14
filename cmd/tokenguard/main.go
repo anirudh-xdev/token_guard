@@ -14,6 +14,7 @@ import (
 	"tokenguard/internal/cache"
 	"tokenguard/internal/models"
 	"tokenguard/internal/proxy"
+	"tokenguard/internal/ui"
 )
 
 func main() {
@@ -90,6 +91,11 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	if config.ManagementEnabled {
+		mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(ui.DashboardHTML)
+		})
 		mux.HandleFunc("/mgmt/provision", handler.HandleProvision)
 		mux.HandleFunc("/mgmt/users", handler.HandleListUsers)
 		mux.HandleFunc("/mgmt/usage", handler.HandleListUsage)

@@ -64,4 +64,4 @@ Design choices behind TokenGuard. Prefer these invariants when changing code.
 
 **Why:** Early product needs a simple admin surface without a frontend build pipeline.
 
-**How:** One `dashboard.html` file; CORS-friendly mgmt handlers for local file or same-origin serving.
+**How:** One `internal/ui/dashboard.html` file embedded into the binary via `go:embed`. CORS headers are set only on `/mgmt/*` responses (not on proxy/guard JSON errors).

@@ -51,7 +51,7 @@ go build -o tokenguard.exe ./cmd/tokenguard
 
 ## Stack (short)
 
-Go 1.21 · Turso (libSQL) · Upstash Redis REST · tiktoken · static `dashboard.html`
+Go 1.21 · Turso (libSQL) · Upstash Redis REST · tiktoken · embedded `internal/ui/dashboard.html`
 
 ## License
 

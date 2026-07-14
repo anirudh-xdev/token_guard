@@ -17,8 +17,8 @@ Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.
 | `internal/billing/` | Turso schema, budgets, keys, usage |
 | `internal/cache/` | Upstash REST + circuit breaker |
 | `internal/models/` | Pricing load + cost estimate |
+| `internal/ui/` | Embedded admin dashboard |
 | `pricing.json` | Allowed models and micro-USD rates |
-| `dashboard.html` | Admin UI |
 | `.env.example` | Env contract |
 
 ## Invariants (do not break)

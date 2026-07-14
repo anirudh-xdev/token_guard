@@ -19,44 +19,48 @@ type provisionResponse struct {
 }
 
 func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		writeManagementOptions(w)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	if !h.authorizedManagementRequest(r) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized management access"})
+		writeManagementJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized management access"})
 		return
 	}
 	if h.budgetStore == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Management store unavailable"})
+		writeManagementJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Management store unavailable"})
 		return
 	}
 
 	var req provisionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		writeManagementJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
 
 	if req.Email == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Email is required"})
+		writeManagementJSON(w, http.StatusBadRequest, map[string]string{"error": "Email is required"})
 		return
 	}
 
 	userID, err := h.budgetStore.CreateUser(r.Context(), req.Email, req.Name)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create user: " + err.Error()})
+		writeManagementJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create user: " + err.Error()})
 		return
 	}
 
 	keyID, plaintext, err := h.budgetStore.CreateAPIKey(r.Context(), userID, "default")
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create API key: " + err.Error()})
+		writeManagementJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create API key: " + err.Error()})
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, provisionResponse{
+	writeManagementJSON(w, http.StatusCreated, provisionResponse{
 		UserID:   userID,
 		APIKey:   plaintext,
 		APIKeyID: keyID,

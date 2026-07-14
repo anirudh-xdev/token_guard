@@ -67,6 +67,6 @@ cmd/tokenguard/main.go
 
 ## Dashboard
 
-`dashboard.html` is a static admin UI served at `/dashboard` when management is enabled. It calls `/mgmt/users`, `/mgmt/usage`, and `/mgmt/provision` with `X-TokenGuard-Admin-Secret`.
+`internal/ui/dashboard.html` is a static admin UI embedded into the binary and served at `/dashboard` when management is enabled. It calls `/mgmt/users`, `/mgmt/usage`, and `/mgmt/provision` with `X-TokenGuard-Admin-Secret`.
 
 See [API.md](API.md) for routes and headers, and [STRUCTURE.md](STRUCTURE.md) for file ownership.

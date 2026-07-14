@@ -10,7 +10,7 @@ alwaysApply: false
 - Headers: `X-TokenGuard-API-Key` / `X-TokenGuard-Key`, `X-TokenGuard-Provider`, `X-TokenGuard-Session-ID`
 - Block codes: `402` budget, `409` loop, `503` deps down, `401` missing key, `413` oversized body
 - After success: count tokens (incl. SSE via `stream_counter.go`), settle reservation, log usage
-- Mgmt: constant-time admin secret compare; CORS `OPTIONS` supported
+- Mgmt: constant-time admin secret compare; CORS only on `/mgmt/*` (not proxy errors)
 - Provider routes come from env map; do not hardcode provider host lists in handlers
 
 When changing guard flow, update tests in `proxy_test.go` and docs in `docs/API.md` if status codes or headers change.

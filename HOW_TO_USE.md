@@ -393,11 +393,17 @@ Invoke-RestMethod `
 
 ## Dashboard
 
-Open `dashboard.html` in a browser.
+With management enabled, open:
 
-The dashboard asks for your admin secret and uses the management endpoints to show users and recent usage.
+```text
+http://127.0.0.1:8080/dashboard
+```
 
-If your TokenGuard API is not running on the same origin, set this in the browser console:
+The dashboard is embedded in the TokenGuard binary (see `internal/ui/dashboard.html`), so it works even when the process is not started from the repo root.
+
+The page asks for your admin secret and uses the management endpoints to show users and recent usage.
+
+If you need to point the UI at a different API base (rare when using `/dashboard` on the same origin), set this in the browser console:
 
 ```javascript
 localStorage.setItem("tokenguard_api_base", "http://127.0.0.1:8080")

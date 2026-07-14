@@ -9,8 +9,8 @@ TokenGuard/
 │   ├── proxy/                   # HTTP proxy, guard, providers, mgmt, dashboard APIs
 │   ├── billing/                 # Turso store, schema, budgets, keys, usage
 │   ├── cache/                   # Upstash Redis client + circuit breaker
-│   └── models/                  # Pricing engine
-├── dashboard.html               # Admin UI
+│   ├── models/                  # Pricing engine
+│   └── ui/                      # Embedded admin dashboard (dashboard.html)
 ├── pricing.json                 # Allowed models + costs
 ├── .env.example                 # Env template
 ├── HOW_TO_USE.md                # Operator / integrator guide
@@ -63,12 +63,18 @@ TokenGuard/
 |------|------------|
 | `pricing.go` | Pricing file format or cost math |
 
+### `internal/ui`
+
+| File | Edit when… |
+|------|------------|
+| `dashboard.html` | Admin UI behavior or layout (embedded into the binary at build time) |
+| `dashboard.go` | Embed wiring for `/dashboard` |
+
 ### Root assets
 
 | File | Edit when… |
 |------|------------|
 | `pricing.json` | Adding or updating model prices |
-| `dashboard.html` | Admin UI behavior or layout |
 | `.env.example` | Documenting new environment variables |
 
 ## Conventions

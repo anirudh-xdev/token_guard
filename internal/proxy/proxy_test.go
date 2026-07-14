@@ -258,6 +258,9 @@ func TestHandlerBlocksInsufficientBudget(t *testing.T) {
 	if recorder.Code != http.StatusPaymentRequired {
 		t.Fatalf("status = %d, want 402", recorder.Code)
 	}
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("proxy error should not set CORS, got Access-Control-Allow-Origin=%q", got)
+	}
 	if upstreamCalled {
 		t.Fatal("upstream was called after budget block")
 	}
@@ -527,3 +530,23 @@ func waitUsageEvent(t *testing.T, events <-chan billing.UsageEvent) billing.Usag
 		return billing.UsageEvent{}
 	}
 }
+
+func TestWriteJSONOmitsCORS(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeJSON(recorder, http.StatusPaymentRequired, map[string]string{"error": "budget"})
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("writeJSON set CORS origin %q", got)
+	}
+}
+
+func TestWriteManagementJSONSetsCORS(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeManagementJSON(recorder, http.StatusOK, map[string]string{"ok": "true"})
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want *", got)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "X-TokenGuard-Admin-Secret") {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want admin secret allowed", got)
+	}
+}
+

@@ -13,7 +13,7 @@ HTTP surface of TokenGuard. Full integrator walkthrough: [HOW_TO_USE.md](../HOW_
 | `GET` | `/mgmt/usage` | `X-TokenGuard-Admin-Secret` | Recent usage; optional `?limit=` |
 | `*` | `/*` | Provider auth + (if guard) TokenGuard key | Reverse proxy to selected upstream |
 
-Management routes also accept `OPTIONS` for CORS preflight.
+Management routes also accept `OPTIONS` for CORS preflight. CORS headers (`Access-Control-Allow-*`) are set only on `/mgmt/*` responses—not on guarded proxy error JSON.
 
 ## Client → TokenGuard headers (proxy)
 

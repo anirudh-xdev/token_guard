@@ -6,41 +6,49 @@ import (
 )
 
 func (h *Handler) HandleListUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		writeManagementOptions(w)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	if !h.authorizedManagementRequest(r) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized management access"})
+		writeManagementJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized management access"})
 		return
 	}
 	if h.budgetStore == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Management store unavailable"})
+		writeManagementJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Management store unavailable"})
 		return
 	}
 
 	users, err := h.budgetStore.ListUsers(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list users: " + err.Error()})
+		writeManagementJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list users: " + err.Error()})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	writeManagementJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
 func (h *Handler) HandleListUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		writeManagementOptions(w)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	if !h.authorizedManagementRequest(r) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized management access"})
+		writeManagementJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized management access"})
 		return
 	}
 	if h.budgetStore == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Management store unavailable"})
+		writeManagementJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Management store unavailable"})
 		return
 	}
 
@@ -53,9 +61,9 @@ func (h *Handler) HandleListUsage(w http.ResponseWriter, r *http.Request) {
 
 	events, err := h.budgetStore.ListRecentUsage(r.Context(), limit)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list usage: " + err.Error()})
+		writeManagementJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list usage: " + err.Error()})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+	writeManagementJSON(w, http.StatusOK, map[string]any{"events": events})
 }
