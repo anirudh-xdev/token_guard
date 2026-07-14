@@ -32,7 +32,9 @@ func main() {
 
 	var options []proxy.HandlerOption
 	if config.GuardEnabled {
-		initCtx, initCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// Turso/Upstash over the public internet often need more than a few seconds
+		// (migrate + seed + redis ping), especially on cold deploy.
+		initCtx, initCancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer initCancel()
 
 		storeConfig, err := billing.ConfigFromEnv()
@@ -75,38 +77,8 @@ func main() {
 		}
 
 		// Seed empty DB catalog from pricing.json, then prefer DB as live source of truth.
-		seed := make(map[string]billing.ModelPrice)
-		for key, price := range pricing.Snapshot() {
-			seed[key] = billing.ModelPrice{
-				ModelKey:        key,
-				InputCostPer1K:  price.InputCostPer1KMicroUSD,
-				OutputCostPer1K: price.OutputCostPer1KMicroUSD,
-			}
-		}
-		inserted, err := store.SeedModelPrices(initCtx, seed)
-		if err != nil {
-			log.Fatalf("seed model prices: %v", err)
-		}
-		if inserted > 0 {
-			log.Printf("seeded %d model prices from pricing file into DB", inserted)
-		}
-		dbPrices, err := store.LoadModelPriceMap(initCtx)
-		if err != nil {
-			log.Fatalf("load model prices from DB: %v", err)
-		}
-		if len(dbPrices) > 0 {
-			live := make(map[string]models.Price, len(dbPrices))
-			for key, p := range dbPrices {
-				live[key] = models.Price{
-					InputCostPer1KMicroUSD:  p.InputCostPer1K,
-					OutputCostPer1KMicroUSD: p.OutputCostPer1K,
-				}
-			}
-			if err := pricing.ReplaceAll(live); err != nil {
-				log.Fatalf("replace pricing engine from DB: %v", err)
-			}
-			log.Printf("pricing catalog loaded from DB (%d models)", len(live))
-		}
+		// Soft-fail: file-backed pricing keeps the proxy up if Turso is slow/flaky.
+		seedCatalog(initCtx, store, pricing)
 
 		options = append(options, proxy.WithGuard(store, pricing, breaker))
 	} else {
@@ -175,4 +147,52 @@ func main() {
 			log.Fatalf("serve proxy: %v", err)
 		}
 	}
+}
+
+// seedCatalog best-effort syncs pricing.json into Turso and reloads the in-memory engine.
+// Failures fall back to the already-loaded file catalog so deploys stay healthy.
+func seedCatalog(_ context.Context, store *billing.Store, pricing *models.PricingEngine) {
+	// Independent of the shared init deadline — Turso HTTP can be slow on cold start.
+	seedCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	seed := make(map[string]billing.ModelPrice)
+	for key, price := range pricing.Snapshot() {
+		seed[key] = billing.ModelPrice{
+			ModelKey:        key,
+			InputCostPer1K:  price.InputCostPer1KMicroUSD,
+			OutputCostPer1K: price.OutputCostPer1KMicroUSD,
+		}
+	}
+
+	inserted, err := store.SeedModelPrices(seedCtx, seed)
+	if err != nil {
+		log.Printf("warning: seed model prices skipped (using file pricing): %v", err)
+		return
+	}
+	if inserted > 0 {
+		log.Printf("seeded %d model prices from pricing file into DB", inserted)
+	}
+
+	dbPrices, err := store.LoadModelPriceMap(seedCtx)
+	if err != nil {
+		log.Printf("warning: load model prices from DB failed (using file pricing): %v", err)
+		return
+	}
+	if len(dbPrices) == 0 {
+		log.Printf("pricing catalog empty in DB; continuing with file pricing (%d models)", pricing.ModelCount())
+		return
+	}
+	live := make(map[string]models.Price, len(dbPrices))
+	for key, p := range dbPrices {
+		live[key] = models.Price{
+			InputCostPer1KMicroUSD:  p.InputCostPer1K,
+			OutputCostPer1KMicroUSD: p.OutputCostPer1K,
+		}
+	}
+	if err := pricing.ReplaceAll(live); err != nil {
+		log.Printf("warning: replace pricing from DB failed (using file pricing): %v", err)
+		return
+	}
+	log.Printf("pricing catalog loaded from DB (%d models)", len(live))
 }

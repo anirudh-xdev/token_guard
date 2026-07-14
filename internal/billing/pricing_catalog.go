@@ -92,6 +92,7 @@ func (s *Store) DeleteModelPrice(ctx context.Context, modelKey string) error {
 }
 
 // SeedModelPrices inserts prices only when the catalog is empty. Returns rows inserted.
+// Uses batched multi-row INSERTs to keep Turso HTTP round-trips low.
 func (s *Store) SeedModelPrices(ctx context.Context, prices map[string]ModelPrice) (int, error) {
 	if s == nil || s.db == nil {
 		return 0, errors.New("billing store is nil")
@@ -107,33 +108,45 @@ func (s *Store) SeedModelPrices(ctx context.Context, prices map[string]ModelPric
 		return 0, nil
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
+	type row struct {
+		key string
+		in  int64
+		out int64
 	}
-	defer tx.Rollback()
-
-	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO model_prices (model_key, input_cost_per_1k, output_cost_per_1k)
-VALUES (?, ?, ?)`)
-	if err != nil {
-		return 0, err
-	}
-	defer stmt.Close()
-
-	inserted := 0
+	rows := make([]row, 0, len(prices))
 	for key, p := range prices {
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
 		}
-		if _, err := stmt.ExecContext(ctx, key, p.InputCostPer1K, p.OutputCostPer1K); err != nil {
-			return 0, err
-		}
-		inserted++
+		rows = append(rows, row{key: key, in: p.InputCostPer1K, out: p.OutputCostPer1K})
 	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
+	if len(rows) == 0 {
+		return 0, nil
+	}
+
+	const batchSize = 40
+	inserted := 0
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		batch := rows[i:end]
+		var b strings.Builder
+		b.WriteString(`INSERT INTO model_prices (model_key, input_cost_per_1k, output_cost_per_1k) VALUES `)
+		args := make([]any, 0, len(batch)*3)
+		for j, r := range batch {
+			if j > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString("(?,?,?)")
+			args = append(args, r.key, r.in, r.out)
+		}
+		if _, err := s.db.ExecContext(ctx, b.String(), args...); err != nil {
+			return inserted, fmt.Errorf("seed model prices batch: %w", err)
+		}
+		inserted += len(batch)
 	}
 	return inserted, nil
 }
