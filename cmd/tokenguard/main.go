@@ -74,6 +74,40 @@ func main() {
 			log.Fatalf("load pricing: %v", err)
 		}
 
+		// Seed empty DB catalog from pricing.json, then prefer DB as live source of truth.
+		seed := make(map[string]billing.ModelPrice)
+		for key, price := range pricing.Snapshot() {
+			seed[key] = billing.ModelPrice{
+				ModelKey:        key,
+				InputCostPer1K:  price.InputCostPer1KMicroUSD,
+				OutputCostPer1K: price.OutputCostPer1KMicroUSD,
+			}
+		}
+		inserted, err := store.SeedModelPrices(initCtx, seed)
+		if err != nil {
+			log.Fatalf("seed model prices: %v", err)
+		}
+		if inserted > 0 {
+			log.Printf("seeded %d model prices from pricing file into DB", inserted)
+		}
+		dbPrices, err := store.LoadModelPriceMap(initCtx)
+		if err != nil {
+			log.Fatalf("load model prices from DB: %v", err)
+		}
+		if len(dbPrices) > 0 {
+			live := make(map[string]models.Price, len(dbPrices))
+			for key, p := range dbPrices {
+				live[key] = models.Price{
+					InputCostPer1KMicroUSD:  p.InputCostPer1K,
+					OutputCostPer1KMicroUSD: p.OutputCostPer1K,
+				}
+			}
+			if err := pricing.ReplaceAll(live); err != nil {
+				log.Fatalf("replace pricing engine from DB: %v", err)
+			}
+			log.Printf("pricing catalog loaded from DB (%d models)", len(live))
+		}
+
 		options = append(options, proxy.WithGuard(store, pricing, breaker))
 	} else {
 		log.Print("TokenGuard guard disabled; running reverse proxy without budget or loop checks")
@@ -103,8 +137,13 @@ func main() {
 			_, _ = w.Write(ui.DashboardHTML)
 		})
 		mux.HandleFunc("/mgmt/provision", handler.HandleProvision)
+		mux.HandleFunc("/mgmt/budget", handler.HandleUpdateBudget)
 		mux.HandleFunc("/mgmt/users", handler.HandleListUsers)
 		mux.HandleFunc("/mgmt/usage", handler.HandleListUsage)
+		mux.HandleFunc("/mgmt/pricing", handler.HandleListPricing)
+		mux.HandleFunc("/mgmt/pricing/upsert", handler.HandleUpsertPricing)
+		mux.HandleFunc("/mgmt/pricing/delete", handler.HandleDeletePricing)
+		mux.HandleFunc("/mgmt/pricing/sync/openrouter", handler.HandleSyncOpenRouterPricing)
 	}
 	mux.Handle("/", handler)
 

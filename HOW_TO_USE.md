@@ -129,7 +129,7 @@ Use `TOKENGUARD_PROVIDER_ROUTES` to define named providers.
 Example:
 
 ```env
-TOKENGUARD_PROVIDER_ROUTES=anthropic=https://api.anthropic.com,openrouter=https://openrouter.ai/api/v1,groq=https://api.groq.com/openai/v1
+TOKENGUARD_PROVIDER_ROUTES=anthropic=https://api.anthropic.com,openrouter=https://openrouter.ai/api,groq=https://api.groq.com/openai/v1
 ```
 
 Supported style:
@@ -301,7 +301,7 @@ Invoke-RestMethod `
 Configure OpenRouter:
 
 ```env
-TOKENGUARD_PROVIDER_ROUTES=openrouter=https://openrouter.ai/api/v1
+TOKENGUARD_PROVIDER_ROUTES=openrouter=https://openrouter.ai/api
 ```
 
 Add pricing:

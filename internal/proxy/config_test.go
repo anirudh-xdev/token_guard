@@ -127,6 +127,34 @@ func TestConfigFromEnvParsesTimeouts(t *testing.T) {
 	}
 }
 
+func TestNormalizeOpenRouterBaseStripsTrailingV1(t *testing.T) {
+	t.Setenv(listenAddrEnv, ":8080")
+	t.Setenv(upstreamURLEnv, "https://openrouter.ai/api/v1")
+	t.Setenv(defaultProviderEnv, "openrouter")
+	t.Setenv(providerRoutesEnv, "openrouter=https://openrouter.ai/api/v1,openai=https://api.openai.com")
+	t.Setenv(tokenizerModelEnv, "")
+	t.Setenv(guardEnabledEnv, "false")
+	t.Setenv(managementEnabledEnv, "false")
+	t.Setenv(defaultMaxOutputTokensEnv, "")
+	t.Setenv(maxRequestBytesEnv, "")
+	t.Setenv(readHeaderTimeoutMillisEnv, "")
+	t.Setenv(shutdownTimeoutMillisEnv, "")
+
+	cfg, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatalf("ConfigFromEnv returned error: %v", err)
+	}
+	if cfg.UpstreamURL != "https://openrouter.ai/api" {
+		t.Fatalf("UpstreamURL = %q, want https://openrouter.ai/api", cfg.UpstreamURL)
+	}
+	if cfg.ProviderRoutes["openrouter"] != "https://openrouter.ai/api" {
+		t.Fatalf("openrouter route = %q, want https://openrouter.ai/api", cfg.ProviderRoutes["openrouter"])
+	}
+	if cfg.ProviderRoutes["openai"] != "https://api.openai.com" {
+		t.Fatalf("openai route = %q, want unchanged", cfg.ProviderRoutes["openai"])
+	}
+}
+
 func TestParseUpstreamURLRejectsMissingHost(t *testing.T) {
 	if _, err := parseUpstreamURL("https://"); err == nil {
 		t.Fatal("parseUpstreamURL returned nil error for missing host")

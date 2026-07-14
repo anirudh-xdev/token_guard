@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 const (
@@ -34,6 +35,7 @@ type CostEstimate struct {
 }
 
 type PricingEngine struct {
+	mu     sync.RWMutex
 	prices map[string]Price
 }
 
@@ -125,13 +127,20 @@ func (e *PricingEngine) PriceForModel(model string) (Price, bool) {
 	if e == nil {
 		return Price{}, false
 	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	price, ok := e.prices[strings.TrimSpace(model)]
 	return price, ok
 }
 
 // ModelNames returns configured model ids (sorted for stable API output).
 func (e *PricingEngine) ModelNames() []string {
-	if e == nil || len(e.prices) == 0 {
+	if e == nil {
+		return nil
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if len(e.prices) == 0 {
 		return nil
 	}
 	names := make([]string, 0, len(e.prices))
@@ -148,6 +157,8 @@ func (e *PricingEngine) PriceForProviderModel(provider, model string) (Price, bo
 	}
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	model = strings.TrimSpace(model)
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	if provider != "" && model != "" {
 		for _, key := range []string{provider + "/" + model, provider + ":" + model} {
 			if price, ok := e.prices[key]; ok {
@@ -155,7 +166,77 @@ func (e *PricingEngine) PriceForProviderModel(provider, model string) (Price, bo
 			}
 		}
 	}
-	return e.PriceForModel(model)
+	price, ok := e.prices[model]
+	return price, ok
+}
+
+// ReplaceAll atomically replaces the in-memory catalog (used after DB seed/reload).
+func (e *PricingEngine) ReplaceAll(table map[string]Price) error {
+	if e == nil {
+		return errors.New("pricing engine is nil")
+	}
+	prices := make(map[string]Price, len(table))
+	for model, price := range table {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			return errors.New("pricing table contains an empty model name")
+		}
+		if price.InputCostPer1KMicroUSD < 0 || price.OutputCostPer1KMicroUSD < 0 {
+			return fmt.Errorf("model %q has negative cost", model)
+		}
+		prices[model] = price
+	}
+	if len(prices) == 0 {
+		return errors.New("pricing table is empty")
+	}
+	e.mu.Lock()
+	e.prices = prices
+	e.mu.Unlock()
+	return nil
+}
+
+// Upsert adds or updates one model price in memory.
+func (e *PricingEngine) Upsert(model string, price Price) error {
+	if e == nil {
+		return errors.New("pricing engine is nil")
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return errors.New("model is required")
+	}
+	if price.InputCostPer1KMicroUSD < 0 || price.OutputCostPer1KMicroUSD < 0 {
+		return errors.New("costs cannot be negative")
+	}
+	e.mu.Lock()
+	if e.prices == nil {
+		e.prices = make(map[string]Price)
+	}
+	e.prices[model] = price
+	e.mu.Unlock()
+	return nil
+}
+
+// Delete removes one model price from memory.
+func (e *PricingEngine) Delete(model string) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	delete(e.prices, strings.TrimSpace(model))
+	e.mu.Unlock()
+}
+
+func (e *PricingEngine) Snapshot() map[string]Price {
+	if e == nil {
+		return nil
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	out := make(map[string]Price, len(e.prices))
+	for k, v := range e.prices {
+		out[k] = v
+	}
+	return out
 }
 
 func (e *PricingEngine) Estimate(model string, inputTokens, maxOutputTokens int64) (CostEstimate, error) {
@@ -238,6 +319,8 @@ func (e *PricingEngine) ModelCount() int {
 	if e == nil {
 		return 0
 	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return len(e.prices)
 }
 

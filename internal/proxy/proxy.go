@@ -198,10 +198,16 @@ type BudgetStore interface {
 	RecordUsage(ctx context.Context, event billing.UsageEvent) error
 	SettleReservedUsage(ctx context.Context, event billing.UsageEvent, reservedMicroUSD int64) error
 	ReleaseReservation(ctx context.Context, userID string, reservedMicroUSD int64) error
-	CreateUser(ctx context.Context, email, name string) (string, error)
+	CreateUser(ctx context.Context, email, name string, limitMicroUSD int64) (string, error)
 	CreateAPIKey(ctx context.Context, userID, name string) (string, string, error)
+	UpdateUserBudget(ctx context.Context, userID string, limitMicroUSD int64, resetSpent bool) (billing.UserBudgetView, error)
 	ListUsers(ctx context.Context) ([]billing.UserBudgetView, error)
 	ListRecentUsage(ctx context.Context, limit int) ([]billing.UsageEvent, error)
+	ListModelPrices(ctx context.Context) ([]billing.ModelPrice, error)
+	UpsertModelPrice(ctx context.Context, price billing.ModelPrice) error
+	DeleteModelPrice(ctx context.Context, modelKey string) error
+	CountModelPrices(ctx context.Context) (int64, error)
+	SeedModelPrices(ctx context.Context, prices map[string]billing.ModelPrice) (int, error)
 }
 
 type LoopBreaker interface {

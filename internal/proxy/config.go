@@ -117,9 +117,16 @@ func (c Config) withDefaults() Config {
 		cfg.DefaultProvider = defaultProviderName
 	}
 	cfg.DefaultProvider = normalizeProviderName(cfg.DefaultProvider)
+	cfg.UpstreamURL = normalizeProviderBaseURL(cfg.DefaultProvider, cfg.UpstreamURL)
 	if cfg.ProviderRoutes == nil {
 		cfg.ProviderRoutes = make(map[string]string, 1)
 	}
+	normalizedRoutes := make(map[string]string, len(cfg.ProviderRoutes))
+	for name, upstream := range cfg.ProviderRoutes {
+		normalizedName := normalizeProviderName(name)
+		normalizedRoutes[normalizedName] = normalizeProviderBaseURL(normalizedName, upstream)
+	}
+	cfg.ProviderRoutes = normalizedRoutes
 	if _, ok := cfg.ProviderRoutes[cfg.DefaultProvider]; !ok {
 		cfg.ProviderRoutes[cfg.DefaultProvider] = cfg.UpstreamURL
 	}
@@ -136,6 +143,21 @@ func (c Config) withDefaults() Config {
 		cfg.MaxRequestBytes = defaultMaxRequestBytes
 	}
 	return cfg
+}
+
+// normalizeProviderBaseURL fixes known misconfigurations that cause doubled paths.
+// OpenRouter clients call /v1/... on TokenGuard; the upstream base must be
+// https://openrouter.ai/api (not .../api/v1), or the proxy builds /api/v1/v1/... → 404.
+func normalizeProviderBaseURL(provider, raw string) string {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	provider = normalizeProviderName(provider)
+	if provider == "openrouter" {
+		lower := strings.ToLower(raw)
+		if strings.HasSuffix(lower, "/api/v1") {
+			return raw[:len(raw)-len("/v1")]
+		}
+	}
+	return raw
 }
 
 func (c Config) Validate() error {

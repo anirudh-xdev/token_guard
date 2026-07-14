@@ -23,7 +23,7 @@ From `go.mod`:
 
 | Service | Protocol | Used for |
 |---------|----------|----------|
-| **Turso** | libSQL (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) | Users, API keys, budgets, usage events |
+| **Turso** | libSQL (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) | Users, API keys, budgets, usage events, model prices |
 | **Upstash Redis** | REST (`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`) | Agent loop circuit breaker |
 | **LLM providers** | HTTPS | Upstream APIs (OpenAI, Anthropic, OpenRouter, Groq, …) |
 

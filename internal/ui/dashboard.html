@@ -54,7 +54,7 @@ code, pre, .mono { font-family: "IBM Plex Mono", monospace; }
 .unlock-card h1 { margin: 0 0 0.4rem; font-size: 1.65rem; }
 .unlock-card p { margin: 0 0 1.25rem; color: var(--muted); }
 label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; }
-input[type="password"], input[type="text"], input[type="email"] {
+input[type="password"], input[type="text"], input[type="email"], input[type="number"] {
   width: 100%; padding: 0.7rem 0.8rem; border: 1px solid var(--line);
   background: #fff; margin-bottom: 0.9rem;
 }
@@ -184,6 +184,7 @@ th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-
       <button class="nav-btn active" data-view="start">Start</button>
       <button class="nav-btn" data-view="integrate">Integrate</button>
       <button class="nav-btn" data-view="users">Users</button>
+      <button class="nav-btn" data-view="pricing">Pricing</button>
       <button class="nav-btn" data-view="usage">Usage</button>
       <button class="nav-btn" data-view="lock">Lock console</button>
       <div class="foot" id="base-foot"></div>
@@ -260,16 +261,39 @@ th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-
         <div class="header">
           <div>
             <h1>Users</h1>
-            <p>Budgets are in USD (stored as micro-USD server-side).</p>
+            <p>Budgets are in USD (stored as micro-USD server-side). Extend a limit when a user hits the wall.</p>
           </div>
           <button class="btn" type="button" onclick="openProvision()">+ Provision user</button>
         </div>
         <div class="panel">
           <table>
             <thead>
-              <tr><th>User</th><th>Email</th><th>Budget</th><th>Spent</th></tr>
+              <tr><th>User</th><th>Email</th><th>Budget</th><th>Spent</th><th></th></tr>
             </thead>
-            <tbody id="users-tbody"><tr><td colspan="4" class="kv">Loading…</td></tr></tbody>
+            <tbody id="users-tbody"><tr><td colspan="5" class="kv">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-pricing" class="hidden">
+        <div class="header">
+          <div>
+            <h1>Pricing</h1>
+            <p>Live catalog in Turso (seeded from <code>pricing.json</code>). Fail-closed: unknown models return 400.</p>
+          </div>
+          <div class="toolbar">
+            <button class="btn secondary" type="button" onclick="syncOpenRouter()">Sync OpenRouter</button>
+            <button class="btn" type="button" onclick="openPriceEditor()">+ Add / edit model</button>
+          </div>
+        </div>
+        <div class="panel">
+          <label for="price-search">Search</label>
+          <input id="price-search" type="text" placeholder="gpt-4o, openrouter/…" oninput="renderPricingTable()" />
+          <table>
+            <thead>
+              <tr><th>Model key</th><th>Input /1K</th><th>Output /1K</th><th></th></tr>
+            </thead>
+            <tbody id="pricing-tbody"><tr><td colspan="4" class="kv">Loading…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -312,6 +336,8 @@ th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-
       <input id="input-name" type="text" placeholder="Acme Agent" />
       <label for="input-email">Email</label>
       <input id="input-email" type="email" placeholder="dev@acme.com" />
+      <label for="input-budget">Budget (USD)</label>
+      <input id="input-budget" type="number" min="0.01" step="0.01" value="1" />
       <div class="modal-actions">
         <button class="btn ghost" type="button" onclick="closeProvision()">Cancel</button>
         <button class="btn" type="button" onclick="submitProvision()">Create user & key</button>
@@ -323,11 +349,48 @@ th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-
   </div>
 </div>
 
+<div class="backdrop" id="budget-modal">
+  <div class="modal">
+    <h2>Edit budget</h2>
+    <div id="budget-err" class="err"></div>
+    <p class="kv mono" id="budget-user-label"></p>
+    <label for="budget-usd">New limit (USD)</label>
+    <input id="budget-usd" type="number" min="0.01" step="0.01" />
+    <label style="display:flex;align-items:center;gap:0.4rem;font-weight:500;margin-bottom:1rem;">
+      <input id="budget-reset" type="checkbox" /> Also reset spent to $0 (fresh period)
+    </label>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="closeBudget()">Cancel</button>
+      <button class="btn" type="button" onclick="submitBudget()">Save budget</button>
+    </div>
+  </div>
+</div>
+
+<div class="backdrop" id="price-modal">
+  <div class="modal">
+    <h2>Model price</h2>
+    <div id="price-err" class="err"></div>
+    <label for="price-key">Model key</label>
+    <input id="price-key" type="text" placeholder="gpt-4o-mini or openrouter/openai/gpt-4o-mini" />
+    <label for="price-in">Input cost (micro-USD per 1K tokens)</label>
+    <input id="price-in" type="number" min="0" step="1" />
+    <label for="price-out">Output cost (micro-USD per 1K tokens)</label>
+    <input id="price-out" type="number" min="0" step="1" />
+    <p class="kv">Example: $0.15 / 1M input tokens ≈ 150 micro-USD per 1K.</p>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="closePriceEditor()">Cancel</button>
+      <button class="btn" type="button" onclick="submitPrice()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API_BASE = window.location.origin;
 let ADMIN = localStorage.getItem('tokenguard_admin_secret') || '';
 let snippetLang = 'curl';
 let lastProvisionedKey = '';
+let pricingCache = [];
+let budgetEditUserId = '';
 
 const $ = (id) => document.getElementById(id);
 
@@ -386,9 +449,10 @@ function lockConsole() {
 function setView(name) {
   if (name === 'lock') { lockConsole(); return; }
   document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
-  ['start', 'integrate', 'users', 'usage'].forEach((v) => {
+  ['start', 'integrate', 'users', 'pricing', 'usage'].forEach((v) => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
+  if (name === 'pricing') loadPricing();
 }
 
 async function checkHealth() {
@@ -432,8 +496,9 @@ async function loadDashboardData() {
           <td>${u.email}</td>
           <td>${formatUSD(u.limit_microusd)}</td>
           <td>${formatUSD(u.spent_microusd)}</td>
+          <td><button class="btn secondary small" type="button" onclick="openBudget('${u.user_id}', ${Number(u.limit_microusd) / 1_000_000})">Edit</button></td>
         </tr>`).join('')
-      : '<tr><td colspan="4" class="kv">No users yet. Provision one to get a tg_ key.</td></tr>';
+      : '<tr><td colspan="5" class="kv">No users yet. Provision one to get a tg_ key.</td></tr>';
 
     const events = rData.events || [];
     $('usage-tbody').innerHTML = events.length
@@ -448,6 +513,35 @@ async function loadDashboardData() {
   } catch (e) {
     showErr('global-err', e.message);
   }
+}
+
+async function loadPricing() {
+  showErr('global-err', '');
+  try {
+    const res = await fetch(`${API_BASE}/mgmt/pricing`, { headers: headers() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to list pricing');
+    pricingCache = data.prices || [];
+    renderPricingTable();
+  } catch (e) {
+    showErr('global-err', e.message);
+  }
+}
+
+function renderPricingTable() {
+  const q = ($('price-search').value || '').trim().toLowerCase();
+  const rows = pricingCache.filter((p) => !q || (p.model_key || '').toLowerCase().includes(q));
+  $('pricing-tbody').innerHTML = rows.length
+    ? rows.map((p) => `<tr>
+        <td class="mono">${p.model_key}</td>
+        <td>${p.input_cost_per_1k}</td>
+        <td>${p.output_cost_per_1k}</td>
+        <td>
+          <button class="btn secondary small" type="button" onclick='openPriceEditor(${JSON.stringify(p)})'>Edit</button>
+          <button class="btn ghost small" type="button" onclick="deletePrice(${JSON.stringify(p.model_key)})">Delete</button>
+        </td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" class="kv">No prices yet. Add one or Sync OpenRouter.</td></tr>';
 }
 
 function renderSnippets() {
@@ -513,6 +607,7 @@ function openProvision() {
   showErr('modal-err', '');
   $('input-name').value = '';
   $('input-email').value = '';
+  $('input-budget').value = '1';
 }
 
 function closeProvision() {
@@ -523,12 +618,14 @@ async function submitProvision() {
   showErr('modal-err', '');
   const name = $('input-name').value.trim();
   const email = $('input-email').value.trim();
+  const budgetUsd = Number($('input-budget').value);
   if (!email) { showErr('modal-err', 'Email is required.'); return; }
+  if (!(budgetUsd > 0)) { showErr('modal-err', 'Budget must be greater than 0.'); return; }
   try {
     const res = await fetch(`${API_BASE}/mgmt/provision`, {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({ email, name }),
+      body: JSON.stringify({ email, name, budget_usd: budgetUsd }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Provision failed');
@@ -539,6 +636,116 @@ async function submitProvision() {
     $('done-actions').classList.remove('hidden');
   } catch (e) {
     showErr('modal-err', e.message);
+  }
+}
+
+function openBudget(userId, budgetUsd) {
+  budgetEditUserId = userId;
+  $('budget-user-label').textContent = userId;
+  $('budget-usd').value = String(budgetUsd || 1);
+  $('budget-reset').checked = false;
+  showErr('budget-err', '');
+  $('budget-modal').style.display = 'flex';
+}
+
+function closeBudget() {
+  $('budget-modal').style.display = 'none';
+  budgetEditUserId = '';
+}
+
+async function submitBudget() {
+  showErr('budget-err', '');
+  const budgetUsd = Number($('budget-usd').value);
+  if (!(budgetUsd > 0)) { showErr('budget-err', 'Budget must be greater than 0.'); return; }
+  try {
+    const res = await fetch(`${API_BASE}/mgmt/budget`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify({
+        user_id: budgetEditUserId,
+        budget_usd: budgetUsd,
+        reset_spent: $('budget-reset').checked,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Update failed');
+    closeBudget();
+    await loadDashboardData();
+  } catch (e) {
+    showErr('budget-err', e.message);
+  }
+}
+
+function openPriceEditor(existing) {
+  showErr('price-err', '');
+  $('price-key').value = existing?.model_key || '';
+  $('price-in').value = existing?.input_cost_per_1k ?? '';
+  $('price-out').value = existing?.output_cost_per_1k ?? '';
+  $('price-modal').style.display = 'flex';
+}
+
+function closePriceEditor() {
+  $('price-modal').style.display = 'none';
+}
+
+async function submitPrice() {
+  showErr('price-err', '');
+  const model_key = $('price-key').value.trim();
+  const input_cost_per_1k = Number($('price-in').value);
+  const output_cost_per_1k = Number($('price-out').value);
+  if (!model_key) { showErr('price-err', 'Model key is required.'); return; }
+  if (!(input_cost_per_1k >= 0) || !(output_cost_per_1k >= 0)) {
+    showErr('price-err', 'Costs must be >= 0.');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/mgmt/pricing/upsert`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ model_key, input_cost_per_1k, output_cost_per_1k }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upsert failed');
+    closePriceEditor();
+    await loadPricing();
+    await loadInfo();
+  } catch (e) {
+    showErr('price-err', e.message);
+  }
+}
+
+async function deletePrice(modelKey) {
+  if (!confirm(`Delete price for ${modelKey}?`)) return;
+  try {
+    const res = await fetch(`${API_BASE}/mgmt/pricing/delete`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ model_key: modelKey }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Delete failed');
+    await loadPricing();
+    await loadInfo();
+  } catch (e) {
+    showErr('global-err', e.message);
+  }
+}
+
+async function syncOpenRouter() {
+  showErr('global-err', '');
+  if (!confirm('Import/update prices from OpenRouter public models API?')) return;
+  try {
+    const res = await fetch(`${API_BASE}/mgmt/pricing/sync/openrouter`, {
+      method: 'POST',
+      headers: headers(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Sync failed');
+    await loadPricing();
+    await loadInfo();
+    alert(`Imported ${data.imported || 0} price rows. Catalog size: ${data.models_priced || '—'}`);
+  } catch (e) {
+    showErr('global-err', e.message);
   }
 }
 

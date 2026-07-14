@@ -481,12 +481,16 @@ func (s *fakeBudgetStore) ReleaseReservation(ctx context.Context, userID string,
 	return nil
 }
 
-func (s *fakeBudgetStore) CreateUser(ctx context.Context, email, name string) (string, error) {
+func (s *fakeBudgetStore) CreateUser(ctx context.Context, email, name string, limitMicroUSD int64) (string, error) {
 	return "user_created", nil
 }
 
 func (s *fakeBudgetStore) CreateAPIKey(ctx context.Context, userID, name string) (string, string, error) {
 	return "key_created", "tg_created", nil
+}
+
+func (s *fakeBudgetStore) UpdateUserBudget(ctx context.Context, userID string, limitMicroUSD int64, resetSpent bool) (billing.UserBudgetView, error) {
+	return billing.UserBudgetView{UserID: userID, LimitMicroUSD: limitMicroUSD}, nil
 }
 
 func (s *fakeBudgetStore) ListUsers(ctx context.Context) ([]billing.UserBudgetView, error) {
@@ -495,6 +499,26 @@ func (s *fakeBudgetStore) ListUsers(ctx context.Context) ([]billing.UserBudgetVi
 
 func (s *fakeBudgetStore) ListRecentUsage(ctx context.Context, limit int) ([]billing.UsageEvent, error) {
 	return nil, nil
+}
+
+func (s *fakeBudgetStore) ListModelPrices(ctx context.Context) ([]billing.ModelPrice, error) {
+	return nil, nil
+}
+
+func (s *fakeBudgetStore) UpsertModelPrice(ctx context.Context, price billing.ModelPrice) error {
+	return nil
+}
+
+func (s *fakeBudgetStore) DeleteModelPrice(ctx context.Context, modelKey string) error {
+	return nil
+}
+
+func (s *fakeBudgetStore) CountModelPrices(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+
+func (s *fakeBudgetStore) SeedModelPrices(ctx context.Context, prices map[string]billing.ModelPrice) (int, error) {
+	return 0, nil
 }
 
 type fakeLoopBreaker struct {

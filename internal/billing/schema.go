@@ -54,6 +54,12 @@ func schemaStatements() []string {
   ),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 )`,
+		`CREATE TABLE IF NOT EXISTS model_prices (
+  model_key TEXT PRIMARY KEY,
+  input_cost_per_1k INTEGER NOT NULL CHECK (input_cost_per_1k >= 0),
+  output_cost_per_1k INTEGER NOT NULL CHECK (output_cost_per_1k >= 0),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_keys_hash_status
   ON api_keys(key_hash, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_user_created

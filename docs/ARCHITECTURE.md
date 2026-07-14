@@ -26,6 +26,9 @@ cmd/tokenguard/main.go
     ├── GET  /healthz
     ├── GET  /dashboard          (mgmt enabled)
     ├── POST /mgmt/provision     (mgmt enabled)
+    ├── PATCH /mgmt/budget       (mgmt enabled)
+    ├── GET  /mgmt/pricing       (mgmt enabled)
+    ├── POST /mgmt/pricing/*     (mgmt enabled)
     ├── GET  /mgmt/users         (mgmt enabled)
     ├── GET  /mgmt/usage         (mgmt enabled)
     └── /*  → proxy.Handler
@@ -61,12 +64,12 @@ cmd/tokenguard/main.go
 
 | Store | Technology | Owns |
 |-------|------------|------|
-| Billing ledger | Turso (libSQL) | `users`, `api_keys`, `user_budgets`, `usage_events` |
+| Billing ledger | Turso (libSQL) | `users`, `api_keys`, `user_budgets`, `usage_events`, `model_prices` |
 | Loop state | Upstash Redis REST | Short-TTL counters keyed by session + payload hash |
 | Pricing | Local `pricing.json` | Model input/output cost in micro-USD per 1K tokens |
 
 ## Dashboard
 
-`internal/ui/dashboard.html` is a static admin UI embedded into the binary and served at `/dashboard` when management is enabled. It calls `/mgmt/users`, `/mgmt/usage`, and `/mgmt/provision` with `X-TokenGuard-Admin-Secret`.
+`internal/ui/dashboard.html` is a static admin UI embedded into the binary and served at `/dashboard` when management is enabled. It calls `/mgmt/users`, `/mgmt/usage`, `/mgmt/provision`, `/mgmt/budget`, and `/mgmt/pricing*` with `X-TokenGuard-Admin-Secret`.
 
 See [API.md](API.md) for routes and headers, and [STRUCTURE.md](STRUCTURE.md) for file ownership.

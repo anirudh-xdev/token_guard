@@ -3,8 +3,11 @@ package billing
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"strings"
 )
 
 type UserBudgetView struct {
@@ -23,10 +26,13 @@ func NewID(prefix string) (string, error) {
 	return prefix + "_" + hex.EncodeToString(raw[:]), nil
 }
 
-func (s *Store) CreateUser(ctx context.Context, email, name string) (string, error) {
+func (s *Store) CreateUser(ctx context.Context, email, name string, limitMicroUSD int64) (string, error) {
 	id, err := NewID("user")
 	if err != nil {
 		return "", err
+	}
+	if limitMicroUSD <= 0 {
+		limitMicroUSD = 1_000_000 // default $1.00
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -40,10 +46,9 @@ func (s *Store) CreateUser(ctx context.Context, email, name string) (string, err
 		return "", fmt.Errorf("insert user: %w", err)
 	}
 
-	// Create default budget ($1.00)
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO user_budgets (user_id, limit_microusd, period_start_at) 
-		VALUES (?, 1000000, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`, id)
+		VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`, id, limitMicroUSD)
 	if err != nil {
 		return "", fmt.Errorf("insert budget: %w", err)
 	}
@@ -52,6 +57,54 @@ func (s *Store) CreateUser(ctx context.Context, email, name string) (string, err
 		return "", err
 	}
 	return id, nil
+}
+
+// UpdateUserBudget sets the spend limit. When resetSpent is true, spent_microusd is zeroed
+// (useful after extending a budget when the user had hit the previous limit).
+func (s *Store) UpdateUserBudget(ctx context.Context, userID string, limitMicroUSD int64, resetSpent bool) (UserBudgetView, error) {
+	if s == nil || s.db == nil {
+		return UserBudgetView{}, errors.New("billing store is nil")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return UserBudgetView{}, errors.New("user_id is required")
+	}
+	if limitMicroUSD < 0 {
+		return UserBudgetView{}, errors.New("limit_microusd cannot be negative")
+	}
+
+	var err error
+	if resetSpent {
+		_, err = s.db.ExecContext(ctx, `
+UPDATE user_budgets
+SET limit_microusd = ?,
+    spent_microusd = 0,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE user_id = ?`, limitMicroUSD, userID)
+	} else {
+		_, err = s.db.ExecContext(ctx, `
+UPDATE user_budgets
+SET limit_microusd = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE user_id = ?`, limitMicroUSD, userID)
+	}
+	if err != nil {
+		return UserBudgetView{}, fmt.Errorf("update budget: %w", err)
+	}
+
+	var view UserBudgetView
+	err = s.db.QueryRowContext(ctx, `
+SELECT u.id, u.email, IFNULL(u.name, ''), b.limit_microusd, b.spent_microusd
+FROM users u
+JOIN user_budgets b ON u.id = b.user_id
+WHERE u.id = ?`, userID).Scan(&view.UserID, &view.Email, &view.Name, &view.LimitMicroUSD, &view.SpentMicroUSD)
+	if errors.Is(err, sql.ErrNoRows) {
+		return UserBudgetView{}, fmt.Errorf("user not found: %s", userID)
+	}
+	if err != nil {
+		return UserBudgetView{}, err
+	}
+	return view, nil
 }
 
 func (s *Store) CreateAPIKey(ctx context.Context, userID, name string) (string, string, error) {
