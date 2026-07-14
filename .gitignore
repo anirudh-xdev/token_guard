@@ -4,6 +4,7 @@
 # Go build/test artifacts
 /tokenguard
 /tokenguard.exe
+/mockupstream.exe
 *.test
 coverage.out
 .gocache/

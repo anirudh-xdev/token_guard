@@ -10,6 +10,8 @@ Map of project documentation. Start here if you are new to the repo.
 | [STACK.md](STACK.md) | Languages, libraries, and external services |
 | [STRUCTURE.md](STRUCTURE.md) | Folder/file map and where to edit |
 | [API.md](API.md) | HTTP routes, headers, and status codes |
+| [DEPLOY.md](DEPLOY.md) | Deploy to Render (Docker) |
+| [INTEGRATION.md](INTEGRATION.md) | Wire any OpenAI-compatible SDK/app through TokenGuard |
 
 ## Related root docs
 

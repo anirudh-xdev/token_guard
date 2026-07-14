@@ -7,6 +7,7 @@ import (
 
 func TestConfigFromEnvUsesDefaults(t *testing.T) {
 	t.Setenv(listenAddrEnv, "")
+	t.Setenv("PORT", "")
 	t.Setenv(upstreamURLEnv, "")
 	t.Setenv(defaultProviderEnv, "")
 	t.Setenv(providerRoutesEnv, "")
@@ -51,6 +52,29 @@ func TestConfigFromEnvUsesDefaults(t *testing.T) {
 	}
 	if cfg.ReadHeaderTimeout != defaultReadHeaderTimeout {
 		t.Fatalf("ReadHeaderTimeout = %v, want %v", cfg.ReadHeaderTimeout, defaultReadHeaderTimeout)
+	}
+}
+
+func TestConfigFromEnvUsesPORTWhenListenAddrUnset(t *testing.T) {
+	t.Setenv(listenAddrEnv, "")
+	t.Setenv("PORT", "10000")
+	t.Setenv(upstreamURLEnv, "")
+	t.Setenv(defaultProviderEnv, "")
+	t.Setenv(providerRoutesEnv, "")
+	t.Setenv(tokenizerModelEnv, "")
+	t.Setenv(guardEnabledEnv, "false")
+	t.Setenv(managementEnabledEnv, "false")
+	t.Setenv(defaultMaxOutputTokensEnv, "")
+	t.Setenv(maxRequestBytesEnv, "")
+	t.Setenv(readHeaderTimeoutMillisEnv, "")
+	t.Setenv(shutdownTimeoutMillisEnv, "")
+
+	cfg, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatalf("ConfigFromEnv returned error: %v", err)
+	}
+	if cfg.ListenAddr != "0.0.0.0:10000" {
+		t.Fatalf("ListenAddr = %q, want 0.0.0.0:10000", cfg.ListenAddr)
 	}
 }
 

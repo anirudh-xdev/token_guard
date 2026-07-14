@@ -84,7 +84,7 @@ func ConfigFromEnv() (Config, error) {
 	}
 
 	cfg := Config{
-		ListenAddr:             strings.TrimSpace(os.Getenv(listenAddrEnv)),
+		ListenAddr:             listenAddrFromEnv(),
 		UpstreamURL:            strings.TrimSpace(os.Getenv(upstreamURLEnv)),
 		DefaultProvider:        strings.TrimSpace(os.Getenv(defaultProviderEnv)),
 		ProviderRoutes:         providerRoutes,
@@ -177,6 +177,20 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New("TOKENGUARD_ADMIN_SECRET must be at least 16 characters when management endpoints are enabled"))
 	}
 	return errors.Join(errs...)
+}
+
+// listenAddrFromEnv prefers TOKENGUARD_LISTEN_ADDR, then Render/Heroku-style PORT.
+func listenAddrFromEnv() string {
+	if addr := strings.TrimSpace(os.Getenv(listenAddrEnv)); addr != "" {
+		return addr
+	}
+	if port := strings.TrimSpace(os.Getenv("PORT")); port != "" {
+		if strings.Contains(port, ":") {
+			return port
+		}
+		return "0.0.0.0:" + port
+	}
+	return ""
 }
 
 func int64FromEnv(name string, fallback int64) (int64, error) {

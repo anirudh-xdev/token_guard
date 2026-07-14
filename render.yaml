@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: tokenguard
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /healthz
+    envVars:
+      - key: TOKENGUARD_GUARD_ENABLED
+        value: "true"
+      - key: TOKENGUARD_MGMT_ENABLED
+        value: "true"
+      - key: TOKENGUARD_DEFAULT_PROVIDER
+        value: openrouter
+      - key: TOKENGUARD_UPSTREAM_URL
+        value: https://openrouter.ai/api/v1
+      - key: TOKENGUARD_PROVIDER_ROUTES
+        value: openai=https://api.openai.com,anthropic=https://api.anthropic.com,openrouter=https://openrouter.ai/api/v1
+      - key: TOKENGUARD_PRICING_FILE
+        value: /app/pricing.json
+      - key: TOKENGUARD_TOKENIZER_MODEL
+        value: gpt-4
+      - key: TOKENGUARD_DEFAULT_MAX_OUTPUT_TOKENS
+        value: "4096"
+      - key: TIKTOKEN_CACHE_DIR
+        value: /tmp/tiktoken-cache
+      # Secrets — set in Render Dashboard (do not commit real values)
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: TOKENGUARD_ADMIN_SECRET
+        sync: false

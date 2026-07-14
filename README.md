@@ -47,6 +47,8 @@ go build -o tokenguard.exe ./cmd/tokenguard
 | [docs/STACK.md](docs/STACK.md) | Tech stack |
 | [docs/STRUCTURE.md](docs/STRUCTURE.md) | Repo layout |
 | [docs/API.md](docs/API.md) | HTTP routes and headers |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Deploy on Render |
+| [docs/INTEGRATION.md](docs/INTEGRATION.md) | Connect SDKs and apps |
 | [AGENTS.md](AGENTS.md) | Guidance for coding agents |
 
 ## Stack (short)
