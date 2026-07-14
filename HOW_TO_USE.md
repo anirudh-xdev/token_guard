@@ -150,6 +150,24 @@ If no provider is specified, TokenGuard uses `TOKENGUARD_DEFAULT_PROVIDER`.
 
 Every model that TokenGuard allows must exist in `pricing.json`.
 
+Costs are stored in **micro-USD per 1K tokens**:
+
+```text
+1 USD = 1,000,000 micro-USD
+$X per 1M tokens  →  input_cost_per_1k = X * 1000
+```
+
+Example: GPT-4o at $2.50 / $10.00 per 1M tokens:
+
+```json
+{
+  "gpt-4o": {
+    "input_cost_per_1k": 2500,
+    "output_cost_per_1k": 10000
+  }
+}
+```
+
 Basic format:
 
 ```json
@@ -161,28 +179,22 @@ Basic format:
 }
 ```
 
-Costs are stored in micro-USD.
-
-```text
-1 USD = 1,000,000 micro-USD
-```
-
 You can also use provider-scoped model names:
 
 ```json
 {
-  "anthropic/claude-3-5-sonnet-latest": {
+  "anthropic/claude-sonnet-4-6": {
     "input_cost_per_1k": 3000,
     "output_cost_per_1k": 15000
   },
-  "openrouter/meta-llama/llama-3.1-70b-instruct": {
-    "input_cost_per_1k": 900,
-    "output_cost_per_1k": 900
+  "openrouter/openai/gpt-4o-mini": {
+    "input_cost_per_1k": 150,
+    "output_cost_per_1k": 600
   }
 }
 ```
 
-If a model is missing from `pricing.json`, TokenGuard blocks the request instead of guessing.
+If a model is missing from `pricing.json`, TokenGuard blocks the request with `400` instead of guessing.
 
 ## Provision A User
 

@@ -48,6 +48,7 @@ go build -o tokenguard.exe ./cmd/tokenguard
 ## Status codes (guard)
 
 - `401` missing/invalid TokenGuard key
+- `400` bad request / unknown model pricing
 - `402` budget
 - `409` loop breaker
 - `413` body too large

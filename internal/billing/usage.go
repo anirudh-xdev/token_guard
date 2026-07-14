@@ -101,18 +101,18 @@ WHERE user_id = ?
 }
 
 type UsageEvent struct {
-	ID                    string
-	UserID                string
-	APIKeyID              string
-	Provider              string
-	Model                 string
-	SessionID             string
-	RequestID             string
-	InputTokens           int64
-	OutputTokens          int64
-	EstimatedCostMicroUSD int64
-	ActualCostMicroUSD    int64
-	Status                string
+	ID                    string `json:"id"`
+	UserID                string `json:"user_id"`
+	APIKeyID              string `json:"api_key_id"`
+	Provider              string `json:"provider"`
+	Model                 string `json:"model"`
+	SessionID             string `json:"session_id"`
+	RequestID             string `json:"request_id"`
+	InputTokens           int64  `json:"input_tokens"`
+	OutputTokens          int64  `json:"output_tokens"`
+	EstimatedCostMicroUSD int64  `json:"estimated_cost_microusd"`
+	ActualCostMicroUSD    int64  `json:"actual_cost_microusd"`
+	Status                string `json:"status"`
 }
 
 func HashAPIKey(apiKey string) string {

@@ -37,7 +37,7 @@ TokenGuard strips its own `X-TokenGuard-*` headers before forwarding.
 | Status | Meaning |
 |--------|---------|
 | `401` | Missing or invalid TokenGuard API key |
-| `400` | Bad request body / analysis failure |
+| `400` | Bad request body / analysis failure / unknown model pricing |
 | `413` | Body exceeds `TOKENGUARD_MAX_REQUEST_BYTES` |
 | `402` | Budget exceeded or related payment block |
 | `409` | Agent loop circuit breaker tripped |

@@ -224,11 +224,11 @@ func (h *Handler) handleBudgetError(w http.ResponseWriter, err error) {
 			"error": "TokenGuard: budget not configured",
 		})
 	case strings.Contains(err.Error(), "model is required"):
-		writeJSON(w, http.StatusPaymentRequired, map[string]string{
+		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "TokenGuard: model is required for budget checks",
 		})
 	case strings.Contains(err.Error(), "pricing not found"):
-		writeJSON(w, http.StatusPaymentRequired, map[string]string{
+		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "TokenGuard: model pricing not configured",
 		})
 	default:

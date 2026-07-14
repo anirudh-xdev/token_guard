@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -53,9 +54,14 @@ func LoadPricingFile(ctx context.Context, path string) (*PricingEngine, error) {
 		return nil, err
 	}
 
-	raw, err := os.ReadFile(path)
+	resolved, err := resolvePricingPath(path)
 	if err != nil {
 		return nil, fmt.Errorf("read pricing file %q: %w", path, err)
+	}
+
+	raw, err := os.ReadFile(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("read pricing file %q: %w", resolved, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -63,9 +69,32 @@ func LoadPricingFile(ctx context.Context, path string) (*PricingEngine, error) {
 
 	var table map[string]Price
 	if err := json.Unmarshal(raw, &table); err != nil {
-		return nil, fmt.Errorf("decode pricing file %q: %w", path, err)
+		return nil, fmt.Errorf("decode pricing file %q: %w", resolved, err)
 	}
 	return NewPricingEngine(table)
+}
+
+// resolvePricingPath tries the given path, then the same relative path next to the executable.
+func resolvePricingPath(path string) (string, error) {
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	} else if filepath.IsAbs(path) || !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+
+	exe, exeErr := os.Executable()
+	if exeErr != nil {
+		return "", errFromMissing(path)
+	}
+	candidate := filepath.Join(filepath.Dir(exe), filepath.Base(path))
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate, nil
+	}
+	return "", errFromMissing(path)
+}
+
+func errFromMissing(path string) error {
+	return fmt.Errorf("pricing file %q not found in working directory or next to the executable", path)
 }
 
 func NewPricingEngine(table map[string]Price) (*PricingEngine, error) {

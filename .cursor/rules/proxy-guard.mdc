@@ -8,7 +8,7 @@ alwaysApply: false
 
 - Preflight runs budget + loop checks in parallel before upstream
 - Headers: `X-TokenGuard-API-Key` / `X-TokenGuard-Key`, `X-TokenGuard-Provider`, `X-TokenGuard-Session-ID`
-- Block codes: `402` budget, `409` loop, `503` deps down, `401` missing key, `413` oversized body
+- Block codes: `402` budget, `409` loop, `503` deps down, `401` missing key, `400` unknown pricing, `413` oversized body
 - After success: count tokens (incl. SSE via `stream_counter.go`), settle reservation, log usage
 - Mgmt: constant-time admin secret compare; CORS only on `/mgmt/*` (not proxy errors)
 - Provider routes come from env map; do not hardcode provider host lists in handlers

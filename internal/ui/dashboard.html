@@ -420,13 +420,13 @@
                 if (rData.events && rData.events.length > 0) {
                     rTbody.innerHTML = rData.events.map(e => `
                         <tr>
-                            <td><strong>${e.Model}</strong></td>
-                            <td class="mono">${e.UserID}</td>
-                            <td>${e.InputTokens} / ${e.OutputTokens}</td>
-                            <td>${formatUSD(e.ActualCostMicroUSD)}</td>
+                            <td><strong>${e.model}</strong></td>
+                            <td class="mono">${e.user_id}</td>
+                            <td>${e.input_tokens} / ${e.output_tokens}</td>
+                            <td>${formatUSD(e.actual_cost_microusd)}</td>
                             <td>
-                                <span class="badge ${e.Status === 'completed' ? 'badge-success' : 'badge-danger'}">
-                                    ${e.Status}
+                                <span class="badge ${e.status === 'completed' ? 'badge-success' : 'badge-danger'}">
+                                    ${e.status}
                                 </span>
                             </td>
                         </tr>
