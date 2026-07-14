@@ -13,9 +13,9 @@ services:
       - key: TOKENGUARD_DEFAULT_PROVIDER
         value: openrouter
       - key: TOKENGUARD_UPSTREAM_URL
-        value: https://openrouter.ai/api/v1
+        value: https://openrouter.ai/api
       - key: TOKENGUARD_PROVIDER_ROUTES
-        value: openai=https://api.openai.com,anthropic=https://api.anthropic.com,openrouter=https://openrouter.ai/api/v1
+        value: openai=https://api.openai.com,anthropic=https://api.anthropic.com,openrouter=https://openrouter.ai/api
       - key: TOKENGUARD_PRICING_FILE
         value: /app/pricing.json
       - key: TOKENGUARD_TOKENIZER_MODEL
