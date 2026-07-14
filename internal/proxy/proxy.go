@@ -30,6 +30,7 @@ type Handler struct {
 	maxRequestBytes        int64
 	defaultMaxOutputTokens int64
 	adminSecret            string
+	managementEnabled      bool
 }
 
 type HandlerOption func(*handlerOptions)
@@ -135,6 +136,7 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 		maxRequestBytes:        cfg.MaxRequestBytes,
 		defaultMaxOutputTokens: cfg.DefaultMaxOutputTokens,
 		adminSecret:            cfg.AdminSecret,
+		managementEnabled:      cfg.ManagementEnabled,
 	}, nil
 }
 

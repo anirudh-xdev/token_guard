@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -126,6 +127,19 @@ func (e *PricingEngine) PriceForModel(model string) (Price, bool) {
 	}
 	price, ok := e.prices[strings.TrimSpace(model)]
 	return price, ok
+}
+
+// ModelNames returns configured model ids (sorted for stable API output).
+func (e *PricingEngine) ModelNames() []string {
+	if e == nil || len(e.prices) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(e.prices))
+	for name := range e.prices {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (e *PricingEngine) PriceForProviderModel(provider, model string) (Price, bool) {

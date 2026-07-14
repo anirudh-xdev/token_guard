@@ -1,503 +1,577 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TokenGuard Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-dark: #0f172a;
-            --glass-bg: rgba(30, 41, 59, 0.7);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --accent-purple: #8b5cf6;
-            --accent-blue: #3b82f6; 
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --success: #10b981;
-            --danger: #ef4444;
-        } 
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TokenGuard Console</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --ink: #10231f;
+  --paper: #f3efe6;
+  --panel: #fffcf6;
+  --line: #d5cec2;
+  --accent: #0f766e;
+  --accent-dark: #0b5a54;
+  --warn: #c45c26;
+  --muted: #5c6b66;
+  --danger: #b42318;
+  --ok: #067a4f;
+  --code: #152925;
+  --sidebar: #16352f;
+  --sidebar-text: #d7ebe6;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Source Sans 3", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+button, input { font: inherit; }
+code, pre, .mono { font-family: "IBM Plex Mono", monospace; }
 
-        body { 
-            margin: 0;
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            background-image: 
-                radial-gradient(circle at 15% 50%, rgba(139, 92, 246, 0.15), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.15), transparent 25%);
-            min-height: 100vh;
-            display: flex;
-        }
+/* Unlock */
+#unlock {
+  min-height: 100vh; display: grid; place-items: center; padding: 1.5rem;
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(15,118,110,0.16), transparent 50%),
+    radial-gradient(ellipse at 80% 0%, rgba(196,92,38,0.12), transparent 45%),
+    var(--paper);
+}
+.unlock-card {
+  width: min(420px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 1.75rem;
+}
+.unlock-card .brand {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 0.5rem;
+}
+.unlock-card h1 { margin: 0 0 0.4rem; font-size: 1.65rem; }
+.unlock-card p { margin: 0 0 1.25rem; color: var(--muted); }
+label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; }
+input[type="password"], input[type="text"], input[type="email"] {
+  width: 100%; padding: 0.7rem 0.8rem; border: 1px solid var(--line);
+  background: #fff; margin-bottom: 0.9rem;
+}
+.btn {
+  border: 1px solid var(--ink); background: var(--ink); color: #fff;
+  padding: 0.65rem 1rem; font-weight: 600; cursor: pointer;
+}
+.btn:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn.secondary { background: transparent; color: var(--ink); }
+.btn.ghost { background: transparent; border-color: var(--line); color: var(--muted); }
+.btn.small { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+.err { color: var(--danger); font-size: 0.9rem; margin: 0 0 0.75rem; display: none; }
 
-        /* Sidebar */
-        .sidebar {
-            width: 260px;
-            background: var(--glass-bg);
-            border-right: 1px solid var(--glass-border);
-            backdrop-filter: blur(12px);
-            padding: 2rem;
-            display: flex;
-            flex-direction: column;
-        }
+/* Shell */
+#app { display: none; min-height: 100vh; }
+.layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+.sidebar {
+  background: var(--sidebar); color: var(--sidebar-text); padding: 1.5rem 1rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
+}
+.sidebar .logo {
+  font-family: "IBM Plex Mono", monospace; font-weight: 500;
+  letter-spacing: 0.04em; margin: 0 0.5rem 1.5rem; font-size: 1rem;
+}
+.nav-btn {
+  text-align: left; border: 0; background: transparent; color: inherit;
+  padding: 0.65rem 0.75rem; cursor: pointer; width: 100%;
+}
+.nav-btn.active, .nav-btn:hover { background: rgba(255,255,255,0.08); }
+.sidebar .foot { margin-top: auto; padding: 0.75rem; font-size: 0.8rem; opacity: 0.75; }
+.main { padding: 1.75rem 1.5rem 3rem; }
+.header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.header h1 { margin: 0; font-size: 1.6rem; }
+.header p { margin: 0.25rem 0 0; color: var(--muted); }
+.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  padding: 1.1rem 1.2rem; margin-bottom: 1rem;
+}
+.panel h2 { margin: 0 0 0.75rem; font-size: 1.05rem; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .sidebar .logo { margin: 0 1rem 0 0; }
+  .sidebar .foot { display: none; }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+.steps { counter-reset: step; list-style: none; padding: 0; margin: 0; }
+.steps li {
+  counter-increment: step; position: relative;
+  padding: 0.85rem 0.85rem 0.85rem 3rem; border-bottom: 1px solid var(--line);
+}
+.steps li:last-child { border-bottom: 0; }
+.steps li::before {
+  content: counter(step); position: absolute; left: 0.6rem; top: 0.9rem;
+  width: 1.5rem; height: 1.5rem; border-radius: 999px; background: var(--accent);
+  color: #fff; font-size: 0.75rem; font-weight: 700; display: grid; place-items: center;
+}
+pre {
+  background: var(--code); color: #e7fff8; padding: 0.9rem; overflow-x: auto;
+  margin: 0.6rem 0 0; white-space: pre-wrap; font-size: 0.78rem;
+}
+.toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+th, td { text-align: left; padding: 0.65rem 0.4rem; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.badge {
+  display: inline-block; padding: 0.15rem 0.45rem; font-size: 0.75rem; font-weight: 600;
+  border: 1px solid var(--line);
+}
+.badge.ok { color: var(--ok); border-color: rgba(6,122,79,0.35); }
+.badge.bad { color: var(--danger); border-color: rgba(180,35,24,0.35); }
+.tabs { display: flex; gap: 0.35rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+.tab {
+  border: 1px solid var(--line); background: transparent; padding: 0.4rem 0.7rem; cursor: pointer;
+}
+.tab.active { border-color: var(--ink); background: var(--ink); color: #fff; }
+.hidden { display: none !important; }
+.banner {
+  background: #fff7ed; border: 1px solid #f0d2b4; color: #7a3b12;
+  padding: 0.75rem 0.9rem; margin-bottom: 1rem; font-size: 0.92rem;
+}
+.kv { font-size: 0.9rem; color: var(--muted); }
+.kv strong { color: var(--ink); font-weight: 600; }
 
-        .logo {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 3rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .nav-item {
-            padding: 0.75rem 1rem;
-            margin-bottom: 0.5rem;
-            border-radius: 8px;
-            color: var(--text-muted);
-            text-decoration: none;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .nav-item:hover, .nav-item.active {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-main);
-        }
-
-        /* Main Content */
-        .main-content {
-            flex: 1;
-            padding: 3rem;
-            overflow-y: auto;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 3rem;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: 2rem;
-            font-weight: 600;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
-        }
-
-        /* Cards and Tables */
-        .glass-card {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 1.5rem;
-            backdrop-filter: blur(12px);
-            margin-bottom: 2rem;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-        }
-
-        .card-title {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: var(--text-main);
-            margin: 0;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th, td {
-            padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid var(--glass-border);
-        }
-
-        th {
-            color: var(--text-muted);
-            font-weight: 500;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        td {
-            font-size: 0.95rem;
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
-        .badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 999px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-
-        .badge-success {
-            background: rgba(16, 185, 129, 0.15);
-            color: var(--success);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-
-        .badge-danger {
-            background: rgba(239, 68, 68, 0.15);
-            color: var(--danger);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-        }
-
-        .mono {
-            font-family: monospace;
-            color: var(--accent-blue);
-        }
-
-        /* Modal */
-        .modal-backdrop {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(4px);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .modal {
-            background: #1e293b;
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 2rem;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-        }
-
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
-
-        .form-input {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid var(--glass-border);
-            border-radius: 8px;
-            color: white;
-            font-family: inherit;
-            box-sizing: border-box;
-        }
-        
-        .form-input:focus {
-            outline: none;
-            border-color: var(--accent-blue);
-        }
-
-        .modal-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 1rem;
-            margin-top: 2rem;
-        }
-
-        .btn-text {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            font-weight: 500;
-        }
-        
-        .btn-text:hover {
-            color: white;
-        }
-
-        /* Loading & Errors */
-        .status-message {
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-            display: none;
-        }
-        .error {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid var(--danger);
-            color: var(--danger);
-        }
-    </style>
+/* Modal */
+.backdrop {
+  position: fixed; inset: 0; background: rgba(16,35,31,0.55);
+  display: none; align-items: center; justify-content: center; padding: 1rem; z-index: 20;
+}
+.modal {
+  width: min(480px, 100%); background: var(--panel); border: 1px solid var(--line); padding: 1.25rem;
+}
+.modal h2 { margin: 0 0 1rem; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
+.success-box {
+  display: none; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 0.9rem; margin-bottom: 0.75rem;
+}
+.success-box code {
+  display: block; margin-top: 0.5rem; padding: 0.55rem; background: #052e24; color: #ecfdf5;
+  word-break: break-all;
+}
+</style>
 </head>
 <body>
 
-    <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="logo">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="url(#gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <defs>
-                    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stop-color="#3b82f6" />
-                        <stop offset="100%" stop-color="#8b5cf6" />
-                    </linearGradient>
-                </defs>
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            TokenGuard
-        </div>
-        <div class="nav-item active" onclick="loadDashboard()">Dashboard</div>
-        <div class="nav-item">API Keys</div>
-        <div class="nav-item">Settings</div>
-    </div>
+<div id="unlock">
+  <div class="unlock-card">
+    <div class="brand">TokenGuard console</div>
+    <h1>Developer access</h1>
+    <p>Enter the server admin secret to manage users and copy integration snippets. This secret never goes to end users.</p>
+    <div id="unlock-err" class="err"></div>
+    <label for="admin-input">Admin secret</label>
+    <input id="admin-input" type="password" autocomplete="current-password" placeholder="TOKENGUARD_ADMIN_SECRET" />
+    <label style="display:flex;align-items:center;gap:0.4rem;font-weight:500;margin-bottom:1rem;">
+      <input id="remember" type="checkbox" checked /> Remember on this device
+    </label>
+    <button class="btn" type="button" id="unlock-btn" style="width:100%">Unlock console</button>
+    <p class="kv" style="margin-top:1rem">Need the guide first? <a href="/docs">Open /docs</a> (no secret required).</p>
+  </div>
+</div>
 
-    <!-- Main Content -->
-    <div class="main-content">
+<div id="app">
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">TokenGuard</div>
+      <button class="nav-btn active" data-view="start">Start</button>
+      <button class="nav-btn" data-view="integrate">Integrate</button>
+      <button class="nav-btn" data-view="users">Users</button>
+      <button class="nav-btn" data-view="usage">Usage</button>
+      <button class="nav-btn" data-view="lock">Lock console</button>
+      <div class="foot" id="base-foot"></div>
+    </aside>
+    <main class="main">
+      <div id="global-err" class="err"></div>
+
+      <section id="view-start">
         <div class="header">
-            <h1>Overview</h1>
-            <button class="btn-primary" onclick="openModal()">+ Provision User</button>
+          <div>
+            <h1>Start here</h1>
+            <p>Provision a key, then point any OpenAI-compatible SDK at this host.</p>
+          </div>
+          <button class="btn" type="button" onclick="openProvision()">+ Provision user</button>
         </div>
-
-        <div id="error-msg" class="status-message error"></div>
-
-        <!-- Users Table -->
-        <div class="glass-card">
-            <div class="card-header">
-                <h2 class="card-title">Managed Users</h2>
+        <div class="banner">Auth model: admin secret unlocks this console · <code>tg_</code> keys identify apps · provider keys still authenticate upstream. Nothing is “open.”</div>
+        <div class="panel">
+          <ol class="steps">
+            <li><strong>This host is your new base URL.</strong><div class="mono" id="base-display"></div></li>
+            <li><strong>Create a TokenGuard user key</strong> with Provision user (or API).</li>
+            <li><strong>Keep your provider API key</strong> (OpenAI / OpenRouter / Anthropic).</li>
+            <li><strong>Add headers</strong> <code>X-TokenGuard-API-Key</code>, optional provider + session id.</li>
+            <li><strong>Handle</strong> 401 / 400 / 402 / 409 in your client.</li>
+          </ol>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <h2>Live service map</h2>
+            <pre id="info-pre">Loading /v1/tokenguard.json…</pre>
+            <div class="toolbar">
+              <button class="btn secondary small" type="button" onclick="loadInfo()">Refresh</button>
+              <a class="btn ghost small" href="/docs">Public docs</a>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>User ID</th>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Budget ($)</th>
-                        <th>Spent ($)</th>
-                    </tr>
-                </thead>
-                <tbody id="users-tbody">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading users...</td></tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Usage Table -->
-        <div class="glass-card">
-            <div class="card-header">
-                <h2 class="card-title">Recent API Usage</h2>
+          </div>
+          <div class="panel">
+            <h2>Quick checks</h2>
+            <p class="kv"><strong>Health:</strong> <span id="health-status">…</span></p>
+            <p class="kv"><strong>Default provider:</strong> <span id="provider-status">…</span></p>
+            <p class="kv"><strong>Priced models:</strong> <span id="models-status">…</span></p>
+            <div class="toolbar">
+              <button class="btn secondary small" type="button" onclick="loadDashboardData()">Refresh users & usage</button>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Model</th>
-                        <th>User</th>
-                        <th>Tokens (In / Out)</th>
-                        <th>Cost ($)</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody id="usage-tbody">
-                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading usage...</td></tr>
-                </tbody>
-            </table>
+          </div>
         </div>
+      </section>
+
+      <section id="view-integrate" class="hidden">
+        <div class="header">
+          <div>
+            <h1>Integrate</h1>
+            <p>Copy-paste snippets for this deployment. Paste your <code>tg_</code> key where shown.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <label for="snippet-key">TokenGuard API key (optional — fills snippets)</label>
+          <input id="snippet-key" type="text" placeholder="tg_..." oninput="renderSnippets()" />
+          <label for="snippet-provider">Provider</label>
+          <input id="snippet-provider" type="text" value="openrouter" oninput="renderSnippets()" />
+        </div>
+        <div class="panel">
+          <div class="tabs">
+            <button class="tab active" data-lang="curl" type="button">curl</button>
+            <button class="tab" data-lang="node" type="button">Node</button>
+            <button class="tab" data-lang="python" type="button">Python</button>
+          </div>
+          <pre id="snippet-pre"></pre>
+          <div class="toolbar">
+            <button class="btn secondary small" type="button" onclick="copySnippet()">Copy</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-users" class="hidden">
+        <div class="header">
+          <div>
+            <h1>Users</h1>
+            <p>Budgets are in USD (stored as micro-USD server-side).</p>
+          </div>
+          <button class="btn" type="button" onclick="openProvision()">+ Provision user</button>
+        </div>
+        <div class="panel">
+          <table>
+            <thead>
+              <tr><th>User</th><th>Email</th><th>Budget</th><th>Spent</th></tr>
+            </thead>
+            <tbody id="users-tbody"><tr><td colspan="4" class="kv">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-usage" class="hidden">
+        <div class="header">
+          <div>
+            <h1>Usage</h1>
+            <p>Recent proxy events across users.</p>
+          </div>
+          <button class="btn secondary" type="button" onclick="loadDashboardData()">Refresh</button>
+        </div>
+        <div class="panel">
+          <table>
+            <thead>
+              <tr><th>Model</th><th>User</th><th>Tokens in/out</th><th>Cost</th><th>Status</th></tr>
+            </thead>
+            <tbody id="usage-tbody"><tr><td colspan="5" class="kv">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="backdrop" id="provision-modal">
+  <div class="modal">
+    <h2>Provision user</h2>
+    <div id="modal-err" class="err"></div>
+    <div class="success-box" id="modal-success">
+      <strong>Save this key now — it is shown once.</strong>
+      <code id="new-api-key"></code>
+      <div class="toolbar">
+        <button class="btn secondary small" type="button" onclick="copyKey()">Copy key</button>
+        <button class="btn secondary small" type="button" onclick="useKeyInSnippets()">Use in Integrate tab</button>
+      </div>
     </div>
-
-    <!-- Provision Modal -->
-    <div class="modal-backdrop" id="provisionModal">
-        <div class="modal">
-            <h2 style="margin-top:0; margin-bottom: 2rem;">Provision New User</h2>
-            
-            <div id="modal-error" class="status-message error" style="display:none; font-size:0.9rem;"></div>
-            <div id="modal-success" class="status-message" style="display:none; font-size:0.9rem; background: rgba(16,185,129,0.1); border: 1px solid var(--success); color: var(--success); padding: 1.5rem;">
-                <strong>Success!</strong><br><br>
-                Please save this TokenGuard Key securely:<br>
-                <code id="new-api-key" style="display:inline-block; margin-top:10px; padding:8px; background: rgba(0,0,0,0.3); border-radius:4px; font-size:1.1rem; color: #fff;"></code>
-            </div>
-
-            <div id="form-container">
-                <div class="form-group">
-                    <label class="form-label">Name</label>
-                    <input type="text" id="input-name" class="form-input" placeholder="e.g. Acme Corp">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Email</label>
-                    <input type="email" id="input-email" class="form-input" placeholder="admin@acme.com">
-                </div>
-                <div class="modal-actions">
-                    <button class="btn-text" onclick="closeModal()">Cancel</button>
-                    <button class="btn-primary" onclick="submitProvision()">Create User & Key</button>
-                </div>
-            </div>
-            
-            <div id="success-actions" class="modal-actions" style="display:none; justify-content:center;">
-                <button class="btn-primary" onclick="closeModal(); loadDashboard();">Done</button>
-            </div>
-        </div>
+    <div id="form-fields">
+      <label for="input-name">Name</label>
+      <input id="input-name" type="text" placeholder="Acme Agent" />
+      <label for="input-email">Email</label>
+      <input id="input-email" type="email" placeholder="dev@acme.com" />
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" onclick="closeProvision()">Cancel</button>
+        <button class="btn" type="button" onclick="submitProvision()">Create user & key</button>
+      </div>
     </div>
+    <div id="done-actions" class="modal-actions hidden">
+      <button class="btn" type="button" onclick="closeProvision(); loadDashboardData();">Done</button>
+    </div>
+  </div>
+</div>
 
-    <script>
-        // CONFIGURATION
-        const API_BASE = localStorage.getItem('tokenguard_api_base') || window.location.origin;
-        const ADMIN_SECRET = localStorage.getItem('tokenguard_admin_secret') || prompt('TokenGuard admin secret') || '';
-        if (ADMIN_SECRET) {
-            localStorage.setItem('tokenguard_admin_secret', ADMIN_SECRET);
-        }
+<script>
+const API_BASE = window.location.origin;
+let ADMIN = localStorage.getItem('tokenguard_admin_secret') || '';
+let snippetLang = 'curl';
+let lastProvisionedKey = '';
 
-        const headers = {
-            'X-TokenGuard-Admin-Secret': ADMIN_SECRET,
-            'Content-Type': 'application/json'
-        };
+const $ = (id) => document.getElementById(id);
 
-        function formatUSD(microUSD) {
-            return '$' + (microUSD / 1000000).toFixed(4);
-        }
+function headers() {
+  return {
+    'Content-Type': 'application/json',
+    'X-TokenGuard-Admin-Secret': ADMIN,
+  };
+}
 
-        async function loadDashboard() {
-            try {
-                // Fetch Users
-                const uRes = await fetch(`${API_BASE}/mgmt/users`, { headers });
-                const uData = await uRes.json();
-                
-                const uTbody = document.getElementById('users-tbody');
-                if (uData.users && uData.users.length > 0) {
-                    uTbody.innerHTML = uData.users.map(u => `
-                        <tr>
-                            <td class="mono">${u.user_id}</td>
-                            <td>${u.name || '-'}</td>
-                            <td>${u.email}</td>
-                            <td>${formatUSD(u.limit_microusd)}</td>
-                            <td>${formatUSD(u.spent_microusd)}</td>
-                        </tr>
-                    `).join('');
-                } else {
-                    uTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No users found.</td></tr>';
-                }
+function showErr(id, msg) {
+  const el = $(id);
+  if (!msg) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = 'block';
+  el.textContent = msg;
+}
 
-                // Fetch Usage
-                const rRes = await fetch(`${API_BASE}/mgmt/usage?limit=10`, { headers });
-                const rData = await rRes.json();
-                
-                const rTbody = document.getElementById('usage-tbody');
-                if (rData.events && rData.events.length > 0) {
-                    rTbody.innerHTML = rData.events.map(e => `
-                        <tr>
-                            <td><strong>${e.model}</strong></td>
-                            <td class="mono">${e.user_id}</td>
-                            <td>${e.input_tokens} / ${e.output_tokens}</td>
-                            <td>${formatUSD(e.actual_cost_microusd)}</td>
-                            <td>
-                                <span class="badge ${e.status === 'completed' ? 'badge-success' : 'badge-danger'}">
-                                    ${e.status}
-                                </span>
-                            </td>
-                        </tr>
-                    `).join('');
-                } else {
-                    rTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No recent usage.</td></tr>';
-                }
+function formatUSD(micro) {
+  return '$' + (Number(micro || 0) / 1_000_000).toFixed(4);
+}
 
-            } catch (err) {
-                const msg = document.getElementById('error-msg');
-                msg.style.display = 'block';
-                msg.innerText = 'Error connecting to TokenGuard API: ' + err.message;
-            }
-        }
+async function unlock() {
+  showErr('unlock-err', '');
+  const secret = $('admin-input').value.trim();
+  if (secret.length < 16) {
+    showErr('unlock-err', 'Admin secret must be at least 16 characters.');
+    return;
+  }
+  ADMIN = secret;
+  try {
+    const res = await fetch(`${API_BASE}/mgmt/users`, { headers: headers() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if ($('remember').checked) localStorage.setItem('tokenguard_admin_secret', ADMIN);
+    else localStorage.removeItem('tokenguard_admin_secret');
+    $('unlock').style.display = 'none';
+    $('app').style.display = 'block';
+    $('base-display').textContent = API_BASE;
+    $('base-foot').textContent = API_BASE;
+    await Promise.all([loadInfo(), loadDashboardData(), checkHealth()]);
+    renderSnippets();
+  } catch (e) {
+    ADMIN = '';
+    showErr('unlock-err', e.message || 'Unlock failed');
+  }
+}
 
-        // Modal Logic
-        function openModal() {
-            document.getElementById('provisionModal').style.display = 'flex';
-            document.getElementById('form-container').style.display = 'block';
-            document.getElementById('success-actions').style.display = 'none';
-            document.getElementById('modal-success').style.display = 'none';
-            document.getElementById('modal-error').style.display = 'none';
-            document.getElementById('input-name').value = '';
-            document.getElementById('input-email').value = '';
-        }
+function lockConsole() {
+  ADMIN = '';
+  localStorage.removeItem('tokenguard_admin_secret');
+  $('app').style.display = 'none';
+  $('unlock').style.display = 'grid';
+  $('admin-input').value = '';
+}
 
-        function closeModal() {
-            document.getElementById('provisionModal').style.display = 'none';
-        }
+function setView(name) {
+  if (name === 'lock') { lockConsole(); return; }
+  document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
+  ['start', 'integrate', 'users', 'usage'].forEach((v) => {
+    $(`view-${v}`).classList.toggle('hidden', v !== name);
+  });
+}
 
-        async function submitProvision() {
-            const name = document.getElementById('input-name').value;
-            const email = document.getElementById('input-email').value;
-            const errorDiv = document.getElementById('modal-error');
+async function checkHealth() {
+  try {
+    const res = await fetch(`${API_BASE}/healthz`);
+    const data = await res.json();
+    $('health-status').textContent = data.status === 'ok' ? 'ok' : JSON.stringify(data);
+  } catch {
+    $('health-status').textContent = 'unreachable';
+  }
+}
 
-            if (!email) {
-                errorDiv.style.display = 'block';
-                errorDiv.innerText = "Email is required.";
-                return;
-            }
+async function loadInfo() {
+  try {
+    const res = await fetch(`${API_BASE}/v1/tokenguard.json`);
+    const data = await res.json();
+    $('info-pre').textContent = JSON.stringify(data, null, 2);
+    $('provider-status').textContent = data.default_provider || '—';
+    $('models-status').textContent = (data.models_priced || []).length + ' configured';
+  } catch (e) {
+    $('info-pre').textContent = 'Failed to load discovery doc: ' + e.message;
+  }
+}
 
-            try {
-                const res = await fetch(`${API_BASE}/mgmt/provision`, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify({ email, name })
-                });
+async function loadDashboardData() {
+  showErr('global-err', '');
+  try {
+    const [uRes, rRes] = await Promise.all([
+      fetch(`${API_BASE}/mgmt/users`, { headers: headers() }),
+      fetch(`${API_BASE}/mgmt/usage?limit=25`, { headers: headers() }),
+    ]);
+    const uData = await uRes.json();
+    const rData = await rRes.json();
+    if (!uRes.ok) throw new Error(uData.error || 'Failed to list users');
+    if (!rRes.ok) throw new Error(rData.error || 'Failed to list usage');
 
-                const data = await res.json();
-                
-                if (!res.ok) {
-                    throw new Error(data.error || 'Failed to provision user');
-                }
+    const users = uData.users || [];
+    $('users-tbody').innerHTML = users.length
+      ? users.map((u) => `<tr>
+          <td><div>${u.name || '—'}</div><div class="mono kv">${u.user_id}</div></td>
+          <td>${u.email}</td>
+          <td>${formatUSD(u.limit_microusd)}</td>
+          <td>${formatUSD(u.spent_microusd)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="4" class="kv">No users yet. Provision one to get a tg_ key.</td></tr>';
 
-                document.getElementById('form-container').style.display = 'none';
-                document.getElementById('modal-error').style.display = 'none';
-                
-                const successDiv = document.getElementById('modal-success');
-                successDiv.style.display = 'block';
-                document.getElementById('new-api-key').innerText = data.api_key;
-                
-                document.getElementById('success-actions').style.display = 'flex';
+    const events = rData.events || [];
+    $('usage-tbody').innerHTML = events.length
+      ? events.map((e) => `<tr>
+          <td><strong>${e.model || '—'}</strong></td>
+          <td class="mono">${e.user_id || '—'}</td>
+          <td>${e.input_tokens ?? 0} / ${e.output_tokens ?? 0}</td>
+          <td>${formatUSD(e.actual_cost_microusd)}</td>
+          <td><span class="badge ${e.status === 'completed' ? 'ok' : 'bad'}">${e.status}</span></td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" class="kv">No usage yet.</td></tr>';
+  } catch (e) {
+    showErr('global-err', e.message);
+  }
+}
 
-            } catch (err) {
-                errorDiv.style.display = 'block';
-                errorDiv.innerText = err.message;
-            }
-        }
+function renderSnippets() {
+  const key = $('snippet-key').value.trim() || 'tg_YOUR_KEY';
+  const provider = $('snippet-provider').value.trim() || 'openrouter';
+  const model = provider === 'openai' ? 'gpt-4o-mini' : 'openai/gpt-4o-mini';
+  const snippets = {
+    curl: `curl -s ${API_BASE}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer YOUR_PROVIDER_KEY" \\
+  -H "X-TokenGuard-API-Key: ${key}" \\
+  -H "X-TokenGuard-Provider: ${provider}" \\
+  -H "X-TokenGuard-Session-ID: my-session-1" \\
+  -d '{"model":"${model}","messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'`,
+    node: `import OpenAI from "openai";
 
-        // Init
-        document.addEventListener('DOMContentLoaded', loadDashboard);
-    </script>
+const client = new OpenAI({
+  apiKey: process.env.PROVIDER_API_KEY,
+  baseURL: "${API_BASE}/v1",
+  defaultHeaders: {
+    "X-TokenGuard-API-Key": "${key}",
+    "X-TokenGuard-Provider": "${provider}",
+    "X-TokenGuard-Session-ID": "my-app-1",
+  },
+});
+
+const res = await client.chat.completions.create({
+  model: "${model}",
+  messages: [{ role: "user", content: "Hello" }],
+  max_tokens: 64,
+});`,
+    python: `from openai import OpenAI
+import os
+
+client = OpenAI(
+    api_key=os.environ["PROVIDER_API_KEY"],
+    base_url="${API_BASE}/v1",
+    default_headers={
+        "X-TokenGuard-API-Key": "${key}",
+        "X-TokenGuard-Provider": "${provider}",
+        "X-TokenGuard-Session-ID": "my-app-1",
+    },
+)
+
+res = client.chat.completions.create(
+    model="${model}",
+    messages=[{"role": "user", "content": "Hello"}],
+    max_tokens=64,
+)`,
+  };
+  $('snippet-pre').textContent = snippets[snippetLang];
+}
+
+function copySnippet() {
+  navigator.clipboard.writeText($('snippet-pre').textContent);
+}
+
+function openProvision() {
+  $('provision-modal').style.display = 'flex';
+  $('form-fields').classList.remove('hidden');
+  $('done-actions').classList.add('hidden');
+  $('modal-success').style.display = 'none';
+  showErr('modal-err', '');
+  $('input-name').value = '';
+  $('input-email').value = '';
+}
+
+function closeProvision() {
+  $('provision-modal').style.display = 'none';
+}
+
+async function submitProvision() {
+  showErr('modal-err', '');
+  const name = $('input-name').value.trim();
+  const email = $('input-email').value.trim();
+  if (!email) { showErr('modal-err', 'Email is required.'); return; }
+  try {
+    const res = await fetch(`${API_BASE}/mgmt/provision`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ email, name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Provision failed');
+    lastProvisionedKey = data.api_key;
+    $('new-api-key').textContent = data.api_key;
+    $('modal-success').style.display = 'block';
+    $('form-fields').classList.add('hidden');
+    $('done-actions').classList.remove('hidden');
+  } catch (e) {
+    showErr('modal-err', e.message);
+  }
+}
+
+function copyKey() {
+  navigator.clipboard.writeText(lastProvisionedKey || $('new-api-key').textContent);
+}
+
+function useKeyInSnippets() {
+  $('snippet-key').value = lastProvisionedKey || $('new-api-key').textContent;
+  renderSnippets();
+  closeProvision();
+  setView('integrate');
+}
+
+$('unlock-btn').addEventListener('click', unlock);
+$('admin-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') unlock(); });
+document.querySelectorAll('.nav-btn').forEach((btn) => {
+  btn.addEventListener('click', () => setView(btn.dataset.view));
+});
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    snippetLang = tab.dataset.lang;
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
+    renderSnippets();
+  });
+});
+
+if (ADMIN) {
+  $('admin-input').value = ADMIN;
+  unlock();
+} else {
+  renderSnippets();
+}
+</script>
 </body>
 </html>

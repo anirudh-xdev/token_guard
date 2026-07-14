@@ -51,6 +51,15 @@ go build -o tokenguard.exe ./cmd/tokenguard
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | Connect SDKs and apps |
 | [AGENTS.md](AGENTS.md) | Guidance for coding agents |
 
+## For developers (after deploy)
+
+| URL | Purpose |
+|-----|---------|
+| `/docs` | Public how-to (no secret) |
+| `/dashboard` | Developer console (admin secret) |
+| `/v1/tokenguard.json` | Machine-readable discovery |
+| `/healthz` | Liveness |
+
 ## Stack (short)
 
 Go 1.21 · Turso (libSQL) · Upstash Redis REST · tiktoken · embedded `internal/ui/dashboard.html`

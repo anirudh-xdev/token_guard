@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TokenGuard Docs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #10231f;
+    --paper: #f4f1ea;
+    --panel: #fffdf8;
+    --line: #d7d0c4;
+    --accent: #0f766e;
+    --accent-2: #c45c26;
+    --muted: #5c6b66;
+    --code: #1a2e2a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    background:
+      radial-gradient(ellipse at 10% 0%, rgba(15,118,110,0.12), transparent 45%),
+      radial-gradient(ellipse at 90% 10%, rgba(196,92,38,0.10), transparent 40%),
+      var(--paper);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  .brand {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+  }
+  h1 { font-size: clamp(2rem, 4vw, 2.75rem); margin: 0 0 0.5rem; letter-spacing: -0.02em; }
+  .lead { color: var(--muted); font-size: 1.15rem; margin: 0 0 2rem; max-width: 38rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 2.5rem; }
+  a.btn, button.btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    border: 1px solid var(--ink); background: var(--ink); color: var(--panel);
+    padding: 0.65rem 1rem; text-decoration: none; font-weight: 600; cursor: pointer;
+    font-family: inherit; font-size: 0.95rem;
+  }
+  a.btn.secondary { background: transparent; color: var(--ink); }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 1.25rem 1.35rem;
+    margin-bottom: 1rem;
+  }
+  h2 { margin: 0 0 0.75rem; font-size: 1.2rem; }
+  ol.steps { margin: 0; padding-left: 1.2rem; }
+  ol.steps li { margin: 0.45rem 0; }
+  pre, code { font-family: "IBM Plex Mono", monospace; font-size: 0.82rem; }
+  pre {
+    background: var(--code); color: #e8fff8; padding: 1rem;
+    overflow-x: auto; margin: 0.75rem 0 0; white-space: pre-wrap;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 0.55rem 0.4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 0.75rem; }
+  .pill {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.75rem;
+    border: 1px solid var(--line); padding: 0.2rem 0.5rem; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">TokenGuard · Developer guide</div>
+    <h1>Use TokenGuard in 5 minutes</h1>
+    <p class="lead">TokenGuard sits between your app and LLM providers. It enforces budgets and stops agent loops before money is spent. Auth stays strong: admin secret for management, <code>tg_</code> keys for apps, provider keys for upstream.</p>
+
+    <div class="actions">
+      <a class="btn" id="dash-link" href="/dashboard">Open developer console</a>
+      <a class="btn secondary" href="/v1/tokenguard.json" target="_blank" rel="noopener">Machine-readable API map</a>
+      <a class="btn secondary" href="/healthz" target="_blank" rel="noopener">Health check</a>
+    </div>
+
+    <section>
+      <h2>1. What changes in your app</h2>
+      <pre>BEFORE  App ──► OpenAI / OpenRouter / Anthropic
+AFTER   App ──► TokenGuard ──► provider</pre>
+      <p class="muted" style="margin:0.75rem 0 0">Keep your provider API key. Add a TokenGuard user key. Point the SDK <strong>base URL</strong> at this host.</p>
+    </section>
+
+    <section>
+      <h2>2. Create a user key</h2>
+      <ol class="steps">
+        <li>Open the <a href="/dashboard">developer console</a>.</li>
+        <li>Unlock with <code>TOKENGUARD_ADMIN_SECRET</code> (server env, never ship this to browsers in production apps).</li>
+        <li>Provision a user → copy the one-time <code>tg_...</code> key.</li>
+      </ol>
+      <p class="muted">Or <code>POST /mgmt/provision</code> with header <code>X-TokenGuard-Admin-Secret</code>.</p>
+    </section>
+
+    <section>
+      <h2>3. Call the proxy</h2>
+      <p>Required on every LLM request:</p>
+      <table>
+        <tr><th>Header</th><th>Value</th></tr>
+        <tr><td><code>X-TokenGuard-API-Key</code></td><td>Your <code>tg_...</code> key</td></tr>
+        <tr><td><code>Authorization</code> or <code>x-api-key</code></td><td>Real provider key (passed through)</td></tr>
+        <tr><td><code>X-TokenGuard-Provider</code></td><td><code>openai</code> · <code>openrouter</code> · <code>anthropic</code></td></tr>
+        <tr><td><code>X-TokenGuard-Session-ID</code></td><td>Stable id per agent run (loop protection)</td></tr>
+      </table>
+      <pre id="curl-sample">loading…</pre>
+      <div class="row"><button class="btn secondary" type="button" onclick="copyText('curl-sample')">Copy curl</button></div>
+    </section>
+
+    <section>
+      <h2>4. SDK pattern (OpenAI-compatible)</h2>
+      <pre id="node-sample">loading…</pre>
+      <div class="row"><button class="btn secondary" type="button" onclick="copyText('node-sample')">Copy Node</button></div>
+    </section>
+
+    <section>
+      <h2>5. Status codes you should handle</h2>
+      <table>
+        <tr><th>Code</th><th>Meaning</th></tr>
+        <tr><td>401</td><td>Missing/invalid <code>tg_</code> key</td></tr>
+        <tr><td>400</td><td>Bad body or model not in pricing</td></tr>
+        <tr><td>402</td><td>Budget exceeded</td></tr>
+        <tr><td>409</td><td>Agent loop detected</td></tr>
+        <tr><td>503</td><td>Billing/Redis unavailable</td></tr>
+      </table>
+      <p class="muted" style="margin:0.75rem 0 0">JSON errors include a machine <code>code</code> field (e.g. <code>budget_exceeded</code>).</p>
+    </section>
+
+    <section>
+      <h2>Useful URLs on this host</h2>
+      <div class="row">
+        <span class="pill" id="base-pill"></span>
+        <span class="pill">/docs</span>
+        <span class="pill">/dashboard</span>
+        <span class="pill">/v1/tokenguard.json</span>
+        <span class="pill">/healthz</span>
+        <span class="pill">/mgmt/*</span>
+      </div>
+    </section>
+  </div>
+<script>
+  const base = window.location.origin;
+  document.getElementById('base-pill').textContent = base;
+  document.getElementById('dash-link').href = base + '/dashboard';
+
+  const curl = `curl -s ${base}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer YOUR_PROVIDER_KEY" \\
+  -H "X-TokenGuard-API-Key: tg_YOUR_KEY" \\
+  -H "X-TokenGuard-Provider: openrouter" \\
+  -H "X-TokenGuard-Session-ID: dev-session-1" \\
+  -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'`;
+
+  const node = `import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "${base}/v1",
+  defaultHeaders: {
+    "X-TokenGuard-API-Key": process.env.TOKENGUARD_API_KEY,
+    "X-TokenGuard-Provider": "openrouter",
+    "X-TokenGuard-Session-ID": "my-app-1",
+  },
+});`;
+
+  document.getElementById('curl-sample').textContent = curl;
+  document.getElementById('node-sample').textContent = node;
+
+  function copyText(id) {
+    navigator.clipboard.writeText(document.getElementById(id).textContent);
+  }
+</script>
+</body>
+</html>

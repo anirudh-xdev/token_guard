@@ -46,6 +46,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 	if apiKeySecret == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{
 			"error": "TokenGuard: missing X-TokenGuard-API-Key",
+			"code":  "missing_api_key",
 		})
 		return nil, false
 	}
@@ -54,6 +55,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 	if err != nil {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{
 			"error": "TokenGuard: request body is too large",
+			"code":  "request_too_large",
 		})
 		return nil, false
 	}
@@ -61,6 +63,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "TokenGuard: " + err.Error(),
+			"code":  "bad_request",
 		})
 		return nil, false
 	}
@@ -98,6 +101,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		h.releaseReservationAsync(budgetResult.apiKey.UserID, budgetResult.reserved)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "TokenGuard: circuit breaker unavailable",
+			"code":  "loop_check_unavailable",
 		})
 		h.logUsageAsync(billing.UsageEvent{
 			UserID:                budgetResult.apiKey.UserID,
@@ -115,6 +119,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		h.releaseReservationAsync(budgetResult.apiKey.UserID, budgetResult.reserved)
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"error": "TokenGuard: Infinite agent loop detected. Circuit breaker tripped to save budget.",
+			"code":  "loop_detected",
 		})
 		h.logUsageAsync(billing.UsageEvent{
 			UserID:                budgetResult.apiKey.UserID,
@@ -132,6 +137,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 	if !budgetResult.affordable {
 		writeJSON(w, http.StatusPaymentRequired, map[string]any{
 			"error":                   "TokenGuard: budget exceeded",
+			"code":                    "budget_exceeded",
 			"available_microusd":      budgetResult.budget.AvailableMicroUSD(),
 			"estimated_cost_microusd": budgetResult.estimate.EstimatedTotalCostMicroUSD,
 			"model":                   modelOrUnknown(analysis.Model),
@@ -218,22 +224,27 @@ func (h *Handler) handleBudgetError(w http.ResponseWriter, err error) {
 	case errors.Is(err, billing.ErrAPIKeyNotFound):
 		writeJSON(w, http.StatusUnauthorized, map[string]string{
 			"error": "TokenGuard: invalid API key",
+			"code":  "invalid_api_key",
 		})
 	case errors.Is(err, billing.ErrBudgetNotFound):
 		writeJSON(w, http.StatusPaymentRequired, map[string]string{
 			"error": "TokenGuard: budget not configured",
+			"code":  "budget_not_configured",
 		})
 	case strings.Contains(err.Error(), "model is required"):
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "TokenGuard: model is required for budget checks",
+			"code":  "model_required",
 		})
 	case strings.Contains(err.Error(), "pricing not found"):
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "TokenGuard: model pricing not configured",
+			"code":  "pricing_not_configured",
 		})
 	default:
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "TokenGuard: budget check unavailable",
+			"code":  "budget_unavailable",
 		})
 	}
 }

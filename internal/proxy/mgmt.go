@@ -13,9 +13,10 @@ type provisionRequest struct {
 }
 
 type provisionResponse struct {
-	UserID   string `json:"user_id"`
-	APIKey   string `json:"api_key"`
-	APIKeyID string `json:"api_key_id"`
+	UserID      string         `json:"user_id"`
+	APIKey      string         `json:"api_key"`
+	APIKeyID    string         `json:"api_key_id"`
+	Integration map[string]any `json:"integration"`
 }
 
 func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +65,21 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 		UserID:   userID,
 		APIKey:   plaintext,
 		APIKeyID: keyID,
+		Integration: map[string]any{
+			"docs_url":      "/docs",
+			"dashboard_url": "/dashboard",
+			"discovery_url": "/v1/tokenguard.json",
+			"next_steps": []string{
+				"Set your SDK baseURL to this host + /v1",
+				"Send X-TokenGuard-API-Key with the api_key from this response",
+				"Keep sending your real provider API key as usual",
+				"Add X-TokenGuard-Session-ID for agent runs",
+			},
+			"required_headers": []string{
+				"X-TokenGuard-API-Key",
+				"Authorization or x-api-key (provider)",
+			},
+		},
 	})
 }
 
