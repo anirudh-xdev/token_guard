@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -17,11 +18,6 @@ const (
 	defaultPricingFile = "pricing.json"
 	pricingFileEnv     = "TOKENGUARD_PRICING_FILE"
 )
-
-type Price struct {
-	InputCostPer1KMicroUSD  int64 `json:"input_cost_per_1k"`
-	OutputCostPer1KMicroUSD int64 `json:"output_cost_per_1k"`
-}
 
 type CostEstimate struct {
 	Model                       string
@@ -157,17 +153,82 @@ func (e *PricingEngine) PriceForProviderModel(provider, model string) (Price, bo
 	}
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	model = strings.TrimSpace(model)
+	if model == "" {
+		return Price{}, false
+	}
+
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	if provider != "" && model != "" {
-		for _, key := range []string{provider + "/" + model, provider + ":" + model} {
-			if price, ok := e.prices[key]; ok {
-				return price, true
-			}
+
+	for _, key := range modelPriceLookupKeys(provider, model) {
+		if price, ok := e.prices[key]; ok {
+			return price, true
 		}
 	}
-	price, ok := e.prices[model]
-	return price, ok
+	return Price{}, false
+}
+
+// modelPriceLookupKeys returns candidate catalog keys from most specific to least.
+func modelPriceLookupKeys(provider, model string) []string {
+	model = strings.TrimSpace(model)
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	keys := make([]string, 0, 8)
+	seen := map[string]struct{}{}
+	add := func(k string) {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			return
+		}
+		if _, ok := seen[k]; ok {
+			return
+		}
+		seen[k] = struct{}{}
+		keys = append(keys, k)
+	}
+
+	if provider != "" {
+		add(provider + "/" + model)
+		add(provider + ":" + model)
+	}
+	add(model)
+
+	// OpenRouter-style "vendor/model" also used as bare id when provider=openrouter.
+	if i := strings.IndexByte(model, '/'); i > 0 {
+		vendor := model[:i]
+		leaf := model[i+1:]
+		if provider != "" {
+			add(provider + "/" + leaf)
+		}
+		add(leaf)
+		if vendor != "" && leaf != "" {
+			add(vendor + "/" + leaf)
+		}
+	}
+
+	// Strip dated snapshots: gpt-4o-mini-2024-07-18 → gpt-4o-mini
+	if base := stripModelSnapshotSuffix(model); base != model {
+		if provider != "" {
+			add(provider + "/" + base)
+		}
+		add(base)
+	}
+
+	return keys
+}
+
+func stripModelSnapshotSuffix(model string) string {
+	// Common pattern: name-YYYY-MM-DD
+	parts := strings.Split(model, "-")
+	if len(parts) < 4 {
+		return model
+	}
+	n := len(parts)
+	if len(parts[n-3]) == 4 && len(parts[n-2]) == 2 && len(parts[n-1]) == 2 {
+		if _, err := strconv.Atoi(parts[n-3]); err == nil {
+			return strings.Join(parts[:n-3], "-")
+		}
+	}
+	return model
 }
 
 // ReplaceAll atomically replaces the in-memory catalog (used after DB seed/reload).

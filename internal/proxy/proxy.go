@@ -208,6 +208,7 @@ type BudgetStore interface {
 	DeleteModelPrice(ctx context.Context, modelKey string) error
 	CountModelPrices(ctx context.Context) (int64, error)
 	SeedModelPrices(ctx context.Context, prices map[string]billing.ModelPrice) (int, error)
+	UpsertMissingModelPrices(ctx context.Context, prices map[string]billing.ModelPrice) (int, error)
 }
 
 type LoopBreaker interface {

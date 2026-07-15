@@ -279,7 +279,7 @@ th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-
         <div class="header">
           <div>
             <h1>Pricing</h1>
-            <p>Live catalog in Turso (seeded from <code>pricing.json</code>). Fail-closed: unknown models return 400.</p>
+            <p>Live catalog in Turso. Enter rates as <strong>$ per 1M tokens</strong> (same as OpenAI/OpenRouter docs). Sync OpenRouter for real market prices.</p>
           </div>
           <div class="toolbar">
             <button class="btn secondary" type="button" onclick="syncOpenRouter()">Sync OpenRouter</button>
@@ -291,7 +291,7 @@ th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-
           <input id="price-search" type="text" placeholder="gpt-4o, openrouter/…" oninput="renderPricingTable()" />
           <table>
             <thead>
-              <tr><th>Model key</th><th>Input /1K</th><th>Output /1K</th><th></th></tr>
+              <tr><th>Model key</th><th>Input $/1M</th><th>Output $/1M</th><th></th></tr>
             </thead>
             <tbody id="pricing-tbody"><tr><td colspan="4" class="kv">Loading…</td></tr></tbody>
           </table>
@@ -372,11 +372,11 @@ th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-
     <div id="price-err" class="err"></div>
     <label for="price-key">Model key</label>
     <input id="price-key" type="text" placeholder="gpt-4o-mini or openrouter/openai/gpt-4o-mini" />
-    <label for="price-in">Input cost (micro-USD per 1K tokens)</label>
-    <input id="price-in" type="number" min="0" step="1" />
-    <label for="price-out">Output cost (micro-USD per 1K tokens)</label>
-    <input id="price-out" type="number" min="0" step="1" />
-    <p class="kv">Example: $0.15 / 1M input tokens ≈ 150 micro-USD per 1K.</p>
+    <label for="price-in">Input ($ per 1M tokens)</label>
+    <input id="price-in" type="number" min="0" step="0.0001" />
+    <label for="price-out">Output ($ per 1M tokens)</label>
+    <input id="price-out" type="number" min="0" step="0.0001" />
+    <p class="kv">Example: gpt-4o-mini is $0.15 input / $0.60 output per 1M tokens.</p>
     <div class="modal-actions">
       <button class="btn ghost" type="button" onclick="closePriceEditor()">Cancel</button>
       <button class="btn" type="button" onclick="submitPrice()">Save</button>
@@ -534,8 +534,8 @@ function renderPricingTable() {
   $('pricing-tbody').innerHTML = rows.length
     ? rows.map((p) => `<tr>
         <td class="mono">${p.model_key}</td>
-        <td>${p.input_cost_per_1k}</td>
-        <td>${p.output_cost_per_1k}</td>
+        <td>$${(p.input_usd_per_million ?? (Number(p.input_cost_per_1k) / 1000)).toFixed(4)}</td>
+        <td>$${(p.output_usd_per_million ?? (Number(p.output_cost_per_1k) / 1000)).toFixed(4)}</td>
         <td>
           <button class="btn secondary small" type="button" onclick='openPriceEditor(${JSON.stringify(p)})'>Edit</button>
           <button class="btn ghost small" type="button" onclick="deletePrice(${JSON.stringify(p.model_key)})">Delete</button>
@@ -679,8 +679,10 @@ async function submitBudget() {
 function openPriceEditor(existing) {
   showErr('price-err', '');
   $('price-key').value = existing?.model_key || '';
-  $('price-in').value = existing?.input_cost_per_1k ?? '';
-  $('price-out').value = existing?.output_cost_per_1k ?? '';
+  const inM = existing?.input_usd_per_million ?? (existing?.input_cost_per_1k != null ? Number(existing.input_cost_per_1k) / 1000 : '');
+  const outM = existing?.output_usd_per_million ?? (existing?.output_cost_per_1k != null ? Number(existing.output_cost_per_1k) / 1000 : '');
+  $('price-in').value = inM === '' ? '' : String(inM);
+  $('price-out').value = outM === '' ? '' : String(outM);
   $('price-modal').style.display = 'flex';
 }
 
@@ -691,18 +693,18 @@ function closePriceEditor() {
 async function submitPrice() {
   showErr('price-err', '');
   const model_key = $('price-key').value.trim();
-  const input_cost_per_1k = Number($('price-in').value);
-  const output_cost_per_1k = Number($('price-out').value);
+  const input_usd_per_million = Number($('price-in').value);
+  const output_usd_per_million = Number($('price-out').value);
   if (!model_key) { showErr('price-err', 'Model key is required.'); return; }
-  if (!(input_cost_per_1k >= 0) || !(output_cost_per_1k >= 0)) {
-    showErr('price-err', 'Costs must be >= 0.');
+  if (!(input_usd_per_million >= 0) || !(output_usd_per_million >= 0)) {
+    showErr('price-err', 'Costs must be >= 0 ($ per 1M tokens).');
     return;
   }
   try {
     const res = await fetch(`${API_BASE}/mgmt/pricing/upsert`, {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({ model_key, input_cost_per_1k, output_cost_per_1k }),
+      body: JSON.stringify({ model_key, input_usd_per_million, output_usd_per_million }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upsert failed');
@@ -733,7 +735,7 @@ async function deletePrice(modelKey) {
 
 async function syncOpenRouter() {
   showErr('global-err', '');
-  if (!confirm('Import/update prices from OpenRouter public models API?')) return;
+  if (!confirm('Import/update live prices from OpenRouter (real USD rates)? This overwrites matching model keys.')) return;
   try {
     const res = await fetch(`${API_BASE}/mgmt/pricing/sync/openrouter`, {
       method: 'POST',
@@ -743,7 +745,7 @@ async function syncOpenRouter() {
     if (!res.ok) throw new Error(data.error || 'Sync failed');
     await loadPricing();
     await loadInfo();
-    alert(`Imported ${data.imported || 0} price rows. Catalog size: ${data.models_priced || '—'}`);
+    alert(`Imported ${data.imported || 0} price rows from live OpenRouter catalog. Catalog size: ${data.models_priced || '—'}`);
   } catch (e) {
     showErr('global-err', e.message);
   }

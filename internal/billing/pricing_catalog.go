@@ -5,13 +5,24 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"tokenguard/internal/models"
 )
 
 // ModelPrice is one priced model key (e.g. "gpt-4o" or "openrouter/openai/gpt-4o-mini").
+// Costs are stored as micro-USD per 1K tokens; API responses also expose USD per 1M.
 type ModelPrice struct {
-	ModelKey           string `json:"model_key"`
-	InputCostPer1K     int64  `json:"input_cost_per_1k"`
-	OutputCostPer1K    int64  `json:"output_cost_per_1k"`
+	ModelKey            string  `json:"model_key"`
+	InputCostPer1K      int64   `json:"input_cost_per_1k"`
+	OutputCostPer1K     int64   `json:"output_cost_per_1k"`
+	InputUSDPerMillion  float64 `json:"input_usd_per_million"`
+	OutputUSDPerMillion float64 `json:"output_usd_per_million"`
+}
+
+func (p ModelPrice) withUSDFields() ModelPrice {
+	p.InputUSDPerMillion = models.MicroPer1KToUSDPerMillion(p.InputCostPer1K)
+	p.OutputUSDPerMillion = models.MicroPer1KToUSDPerMillion(p.OutputCostPer1K)
+	return p
 }
 
 func (s *Store) ListModelPrices(ctx context.Context) ([]ModelPrice, error) {
@@ -33,7 +44,7 @@ ORDER BY model_key ASC`)
 		if err := rows.Scan(&p.ModelKey, &p.InputCostPer1K, &p.OutputCostPer1K); err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		out = append(out, p.withUSDFields())
 	}
 	return out, nil
 }
@@ -92,7 +103,6 @@ func (s *Store) DeleteModelPrice(ctx context.Context, modelKey string) error {
 }
 
 // SeedModelPrices inserts prices only when the catalog is empty. Returns rows inserted.
-// Uses batched multi-row INSERTs to keep Turso HTTP round-trips low.
 func (s *Store) SeedModelPrices(ctx context.Context, prices map[string]ModelPrice) (int, error) {
 	if s == nil || s.db == nil {
 		return 0, errors.New("billing store is nil")
@@ -104,10 +114,38 @@ func (s *Store) SeedModelPrices(ctx context.Context, prices map[string]ModelPric
 	if count > 0 {
 		return 0, nil
 	}
-	if len(prices) == 0 {
+	return s.insertModelPriceBatches(ctx, prices)
+}
+
+// UpsertMissingModelPrices inserts only keys that are not already in the catalog.
+// Existing operator-edited rows are left untouched.
+func (s *Store) UpsertMissingModelPrices(ctx context.Context, prices map[string]ModelPrice) (int, error) {
+	if s == nil || s.db == nil {
+		return 0, errors.New("billing store is nil")
+	}
+	existing, err := s.LoadModelPriceMap(ctx)
+	if err != nil {
+		return 0, err
+	}
+	missing := make(map[string]ModelPrice)
+	for key, p := range prices {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := existing[key]; ok {
+			continue
+		}
+		p.ModelKey = key
+		missing[key] = p
+	}
+	if len(missing) == 0 {
 		return 0, nil
 	}
+	return s.insertModelPriceBatches(ctx, missing)
+}
 
+func (s *Store) insertModelPriceBatches(ctx context.Context, prices map[string]ModelPrice) (int, error) {
 	type row struct {
 		key string
 		in  int64
@@ -134,7 +172,7 @@ func (s *Store) SeedModelPrices(ctx context.Context, prices map[string]ModelPric
 		}
 		batch := rows[i:end]
 		var b strings.Builder
-		b.WriteString(`INSERT INTO model_prices (model_key, input_cost_per_1k, output_cost_per_1k) VALUES `)
+		b.WriteString(`INSERT OR IGNORE INTO model_prices (model_key, input_cost_per_1k, output_cost_per_1k) VALUES `)
 		args := make([]any, 0, len(batch)*3)
 		for j, r := range batch {
 			if j > 0 {
@@ -144,7 +182,7 @@ func (s *Store) SeedModelPrices(ctx context.Context, prices map[string]ModelPric
 			args = append(args, r.key, r.in, r.out)
 		}
 		if _, err := s.db.ExecContext(ctx, b.String(), args...); err != nil {
-			return inserted, fmt.Errorf("seed model prices batch: %w", err)
+			return inserted, fmt.Errorf("insert model prices batch: %w", err)
 		}
 		inserted += len(batch)
 	}

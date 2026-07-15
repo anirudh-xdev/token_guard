@@ -71,4 +71,9 @@ func TestJSONUsageExtractionCoversOpenAIAndAnthropic(t *testing.T) {
 	if anthropicUsage.InputTokens != 8 || anthropicUsage.OutputTokens != 5 {
 		t.Fatalf("Anthropic usage = %#v, want input=8 output=5", anthropicUsage)
 	}
+
+	orUsage, ok := extractUsage([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":2,"cost":0.000012}}`))
+	if !ok || orUsage.CostUSD != 0.000012 {
+		t.Fatalf("OpenRouter cost usage = %#v", orUsage)
+	}
 }

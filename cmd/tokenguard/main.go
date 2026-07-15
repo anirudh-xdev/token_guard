@@ -4,7 +4,9 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -168,10 +170,44 @@ func seedCatalog(_ context.Context, store *billing.Store, pricing *models.Pricin
 	inserted, err := store.SeedModelPrices(seedCtx, seed)
 	if err != nil {
 		log.Printf("warning: seed model prices skipped (using file pricing): %v", err)
-		return
-	}
-	if inserted > 0 {
+	} else if inserted > 0 {
 		log.Printf("seeded %d model prices from pricing file into DB", inserted)
+	}
+
+	// Fill any new models from pricing.json without overwriting operator edits.
+	if missing, err := store.UpsertMissingModelPrices(seedCtx, seed); err != nil {
+		log.Printf("warning: merge missing model prices: %v", err)
+	} else if missing > 0 {
+		log.Printf("added %d missing model prices from pricing file", missing)
+	}
+
+	// Optional: pull live OpenRouter rates on boot (real market prices).
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("TOKENGUARD_PRICING_SYNC_OPENROUTER")), "true") {
+		syncCtx, syncCancel := context.WithTimeout(context.Background(), 45*time.Second)
+		fetched, err := models.FetchOpenRouterPrices(syncCtx)
+		syncCancel()
+		if err != nil {
+			log.Printf("warning: openrouter pricing sync on boot failed: %v", err)
+		} else {
+			n := 0
+			for _, row := range fetched {
+				mp := billing.ModelPrice{
+					ModelKey:        row.ModelKey,
+					InputCostPer1K:  row.InputCostPer1KMicroUSD,
+					OutputCostPer1K: row.OutputCostPer1KMicroUSD,
+				}
+				if err := store.UpsertModelPrice(seedCtx, mp); err != nil {
+					log.Printf("warning: openrouter upsert %s: %v", row.ModelKey, err)
+					break
+				}
+				_ = pricing.Upsert(row.ModelKey, models.Price{
+					InputCostPer1KMicroUSD:  row.InputCostPer1KMicroUSD,
+					OutputCostPer1KMicroUSD: row.OutputCostPer1KMicroUSD,
+				})
+				n++
+			}
+			log.Printf("synced %d openrouter price rows on boot", n)
+		}
 	}
 
 	dbPrices, err := store.LoadModelPriceMap(seedCtx)

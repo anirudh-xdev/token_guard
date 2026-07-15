@@ -521,6 +521,10 @@ func (s *fakeBudgetStore) SeedModelPrices(ctx context.Context, prices map[string
 	return 0, nil
 }
 
+func (s *fakeBudgetStore) UpsertMissingModelPrices(ctx context.Context, prices map[string]billing.ModelPrice) (int, error) {
+	return 0, nil
+}
+
 type fakeLoopBreaker struct {
 	result cache.CircuitBreakerResult
 	err    error

@@ -8,19 +8,23 @@ import (
 	"strings"
 
 	tiktoken "github.com/pkoukk/tiktoken-go"
+
+	"tokenguard/internal/models"
 )
 
 const eventStreamContentType = "text/event-stream"
 
 type StreamTokenEvent struct {
-	Model          string
-	Tokens         int
-	TotalTokens    int64
-	InputTokens    int64
-	TextBytes      int
-	TotalTextBytes int64
-	Done           bool
-	ProviderUsage  bool
+	Model           string
+	Tokens          int
+	TotalTokens     int64
+	InputTokens     int64
+	TextBytes       int
+	TotalTextBytes  int64
+	Done            bool
+	ProviderUsage   bool
+	CostMicroUSD    int64 // provider-reported cost when available (e.g. OpenRouter usage.cost)
+	HasProviderCost bool
 }
 
 type StreamTokenObserver func(StreamTokenEvent)
@@ -136,6 +140,8 @@ type sseTokenCounter struct {
 	totalTokens    int64
 	inputTokens    int64
 	totalTextBytes int64
+	costMicroUSD   int64
+	hasProviderCost bool
 	seenStream     bool
 	seenJSON       bool
 	truncatedJSON  bool
@@ -191,12 +197,14 @@ func (c *sseTokenCounter) Finish() StreamTokenEvent {
 	}
 
 	event := StreamTokenEvent{
-		Model:          c.model,
-		TotalTokens:    c.totalTokens,
-		InputTokens:    c.inputTokens,
-		TotalTextBytes: c.totalTextBytes,
-		Done:           true,
-		ProviderUsage:  c.seenJSON,
+		Model:           c.model,
+		TotalTokens:     c.totalTokens,
+		InputTokens:     c.inputTokens,
+		TotalTextBytes:  c.totalTextBytes,
+		Done:            true,
+		ProviderUsage:   c.seenJSON || c.hasProviderCost,
+		CostMicroUSD:    c.costMicroUSD,
+		HasProviderCost: c.hasProviderCost,
 	}
 	if (c.seenStream || c.seenJSON) && c.observer != nil {
 		c.observer(event)
@@ -244,6 +252,8 @@ func (c *sseTokenCounter) processEvent() {
 	if bytes.Equal(data, []byte("[DONE]")) {
 		return
 	}
+
+	c.processProviderUsage(data)
 
 	for _, text := range extractStreamText(data) {
 		if text == "" {
@@ -311,14 +321,15 @@ type contentBlock struct {
 }
 
 type usagePayload struct {
-	PromptTokens         int64 `json:"prompt_tokens"`
-	CompletionTokens     int64 `json:"completion_tokens"`
-	InputTokens          int64 `json:"input_tokens"`
-	OutputTokens         int64 `json:"output_tokens"`
-	TotalTokens          int64 `json:"total_tokens"`
-	PromptTokenCount     int64 `json:"promptTokenCount"`
-	CandidatesTokenCount int64 `json:"candidatesTokenCount"`
-	TotalTokenCount      int64 `json:"totalTokenCount"`
+	PromptTokens         int64   `json:"prompt_tokens"`
+	CompletionTokens     int64   `json:"completion_tokens"`
+	InputTokens          int64   `json:"input_tokens"`
+	OutputTokens         int64   `json:"output_tokens"`
+	TotalTokens          int64   `json:"total_tokens"`
+	PromptTokenCount     int64   `json:"promptTokenCount"`
+	CandidatesTokenCount int64   `json:"candidatesTokenCount"`
+	TotalTokenCount      int64   `json:"totalTokenCount"`
+	Cost                 float64 `json:"cost"` // OpenRouter: USD charged for this request
 }
 
 func extractStreamText(data []byte) []string {
@@ -399,6 +410,11 @@ func appendContentText(value any, appendText func(string)) {
 func (c *sseTokenCounter) processProviderUsage(raw []byte) {
 	usage, ok := extractUsage(raw)
 	if !ok {
+		// Only fall back to response-text counting for non-SSE JSON bodies.
+		// SSE deltas are already counted via extractStreamText in processEvent.
+		if c.seenStream {
+			return
+		}
 		for _, text := range extractResponseText(raw) {
 			if text == "" || c.encoder == nil {
 				continue
@@ -413,11 +429,16 @@ func (c *sseTokenCounter) processProviderUsage(raw []byte) {
 	if usage.OutputTokens > 0 {
 		c.totalTokens = usage.OutputTokens
 	}
+	if usage.CostUSD > 0 {
+		c.costMicroUSD = models.USDToMicroUSD(usage.CostUSD)
+		c.hasProviderCost = true
+	}
 }
 
 func extractUsage(raw []byte) (struct {
 	InputTokens  int64
 	OutputTokens int64
+	CostUSD      float64
 }, bool) {
 	var root struct {
 		Usage         usagePayload `json:"usage"`
@@ -427,6 +448,7 @@ func extractUsage(raw []byte) (struct {
 		return struct {
 			InputTokens  int64
 			OutputTokens int64
+			CostUSD      float64
 		}{}, false
 	}
 
@@ -438,10 +460,15 @@ func extractUsage(raw []byte) (struct {
 			output = total - input
 		}
 	}
+	cost := root.Usage.Cost
+	if cost <= 0 {
+		cost = root.UsageMetadata.Cost
+	}
 	return struct {
 		InputTokens  int64
 		OutputTokens int64
-	}{InputTokens: input, OutputTokens: output}, input > 0 || output > 0
+		CostUSD      float64
+	}{InputTokens: input, OutputTokens: output, CostUSD: cost}, input > 0 || output > 0 || cost > 0
 }
 
 func extractResponseText(raw []byte) []string {

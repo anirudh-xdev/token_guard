@@ -123,6 +123,60 @@ func TestLoadPricingFileValidatesModelTable(t *testing.T) {
 	}
 }
 
+func TestLoadPricingFileAcceptsUSDPerMillion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pricing.json")
+	raw := `{"gpt-4o-mini":{"input_usd_per_million":0.15,"output_usd_per_million":0.6}}`
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatalf("write pricing file: %v", err)
+	}
+	engine, err := LoadPricingFile(context.Background(), path)
+	if err != nil {
+		t.Fatalf("LoadPricingFile: %v", err)
+	}
+	price, ok := engine.PriceForModel("gpt-4o-mini")
+	if !ok {
+		t.Fatal("model missing")
+	}
+	if price.InputCostPer1KMicroUSD != 150 {
+		t.Fatalf("input = %d, want 150 micro/1K ($0.15/1M)", price.InputCostPer1KMicroUSD)
+	}
+	if price.OutputCostPer1KMicroUSD != 600 {
+		t.Fatalf("output = %d, want 600 micro/1K ($0.60/1M)", price.OutputCostPer1KMicroUSD)
+	}
+}
+
+func TestPriceForProviderModelResolvesAliases(t *testing.T) {
+	engine, err := NewPricingEngine(map[string]Price{
+		"gpt-4o-mini": {
+			InputCostPer1KMicroUSD:  150,
+			OutputCostPer1KMicroUSD: 600,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPricingEngine: %v", err)
+	}
+	_, ok := engine.PriceForProviderModel("openrouter", "openai/gpt-4o-mini")
+	if !ok {
+		t.Fatal("expected leaf alias openai/gpt-4o-mini → gpt-4o-mini")
+	}
+	_, ok = engine.PriceForProviderModel("openai", "gpt-4o-mini-2024-07-18")
+	if !ok {
+		t.Fatal("expected snapshot suffix strip")
+	}
+}
+
+func TestOpenRouterUSDPerTokenConversion(t *testing.T) {
+	// $0.15 / 1M = 0.00000015 USD/token → 150 micro-USD per 1K
+	got, err := OpenRouterUSDPerTokenToMicroPer1K("0.00000015")
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	if got != 150 {
+		t.Fatalf("got %d, want 150", got)
+	}
+}
+
 func TestNewPricingEngineRejectsNegativeCosts(t *testing.T) {
 	_, err := NewPricingEngine(map[string]Price{
 		"bad-model": {

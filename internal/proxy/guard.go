@@ -261,7 +261,10 @@ func (h *Handler) logCompletedUsageAsync(guard *guardContext, streamEvent Stream
 		status = "provider_error"
 		actualCost = 0
 		outputTokens = 0
-	} else if guard.analysis.Model != "" && outputTokens > 0 {
+	} else if streamEvent.HasProviderCost && streamEvent.CostMicroUSD > 0 {
+		// Prefer provider-reported USD (OpenRouter usage.cost) — real billed amount.
+		actualCost = streamEvent.CostMicroUSD
+	} else if guard.analysis.Model != "" && (inputTokens > 0 || outputTokens > 0) {
 		calculated, err := h.pricing.ActualCostMicroUSDProvider(guard.analysis.Provider, guard.analysis.Model, inputTokens, outputTokens)
 		if err == nil {
 			actualCost = calculated
