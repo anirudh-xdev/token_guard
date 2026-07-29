@@ -48,7 +48,20 @@ func TestGuardRequestTooLarge(t *testing.T) {
 }
 
 func TestGuardBudgetExceeded(t *testing.T) {
-	h := newHarness(t, harnessOpts{guardEnabled: true, mgmtEnabled: true, budgetLimit: 1})
+	hits := &hitCountingUpstream{
+		next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(loadFixture(t, "chat.response.json"))
+		}),
+	}
+	h := newHarness(t, harnessOpts{
+		guardEnabled: true,
+		mgmtEnabled:  true,
+		budgetLimit:  1, // 1 micro-USD — any real estimate exceeds this
+		upstream:     hits,
+	})
+
 	status, data, _ := h.doJSON(http.MethodPost, "/v1/chat/completions", loadFixture(t, "chat.request.json"), h.proxyHeaders(nil))
 	if status != http.StatusPaymentRequired {
 		t.Fatalf("status=%d data=%v", status, data)
@@ -56,9 +69,24 @@ func TestGuardBudgetExceeded(t *testing.T) {
 	if data["code"] != "budget_exceeded" {
 		t.Fatalf("code=%v", data["code"])
 	}
+	if _, ok := data["available_microusd"]; !ok {
+		t.Fatalf("missing available_microusd in %#v", data)
+	}
+	if _, ok := data["estimated_cost_microusd"]; !ok {
+		t.Fatalf("missing estimated_cost_microusd in %#v", data)
+	}
+	if hits.Hits() != 0 {
+		t.Fatalf("upstream hits = %d, want 0 (budget must block before forward)", hits.Hits())
+	}
 	ev := h.waitUsage(2 * time.Second)
 	if ev.Status != "blocked_budget" {
 		t.Fatalf("usage status=%q", ev.Status)
+	}
+	h.store.mu.Lock()
+	spent := h.store.budgets[h.userID].SpentMicroUSD
+	h.store.mu.Unlock()
+	if spent != 0 {
+		t.Fatalf("spent = %d after budget block, want 0", spent)
 	}
 
 	status, _, _ = h.doJSON(http.MethodPatch, "/mgmt/budget", map[string]any{
@@ -72,24 +100,116 @@ func TestGuardBudgetExceeded(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("retry status=%d", status)
 	}
+	if hits.Hits() != 1 {
+		t.Fatalf("upstream hits after extend = %d, want 1", hits.Hits())
+	}
 	ev = h.waitUsage(2 * time.Second)
 	if ev.Status != "completed" {
 		t.Fatalf("retry usage=%q", ev.Status)
 	}
 }
 
-func TestGuardLoopDetected(t *testing.T) {
+func TestGuardLoopTripsAfterRepeatedIdenticalRequests(t *testing.T) {
+	const threshold = 3
+	hits := &hitCountingUpstream{
+		next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(loadFixture(t, "chat.response.json"))
+		}),
+	}
+	breaker := newCountingBreaker(threshold)
+	h := newHarness(t, harnessOpts{
+		guardEnabled: true,
+		mgmtEnabled:  true,
+		budgetLimit:  10_000_000,
+		breaker:      breaker,
+		upstream:     hits,
+	})
+
+	body := loadFixture(t, "chat.request.json")
+	hdr := h.proxyHeaders(map[string]string{"X-TokenGuard-Session-ID": "agent-loop-sess"})
+
+	// First (threshold-1) identical requests should pass.
+	for i := 0; i < int(threshold)-1; i++ {
+		status, data, _ := h.doJSON(http.MethodPost, "/v1/chat/completions", body, hdr)
+		if status != http.StatusOK {
+			t.Fatalf("request %d status=%d data=%v", i+1, status, data)
+		}
+		ev := h.waitUsage(2 * time.Second)
+		if ev.Status != "completed" {
+			t.Fatalf("request %d usage=%q", i+1, ev.Status)
+		}
+	}
+	if hits.Hits() != int(threshold)-1 {
+		t.Fatalf("upstream hits before trip = %d, want %d", hits.Hits(), threshold-1)
+	}
+
+	// Nth identical payload trips the loop breaker — upstream must not be called.
+	status, data, _ := h.doJSON(http.MethodPost, "/v1/chat/completions", body, hdr)
+	if status != http.StatusConflict || data["code"] != "loop_detected" {
+		t.Fatalf("trip status=%d data=%v", status, data)
+	}
+	if hits.Hits() != int(threshold)-1 {
+		t.Fatalf("upstream hits after trip = %d, want still %d", hits.Hits(), threshold-1)
+	}
+	ev := h.waitUsage(2 * time.Second)
+	if ev.Status != "blocked_loop" {
+		t.Fatalf("usage=%q", ev.Status)
+	}
+
+	// Different session should not share the counter.
+	status, _, _ = h.doJSON(http.MethodPost, "/v1/chat/completions", body, h.proxyHeaders(map[string]string{
+		"X-TokenGuard-Session-ID": "other-session",
+	}))
+	if status != http.StatusOK {
+		t.Fatalf("other session status=%d", status)
+	}
+	_ = h.waitUsage(2 * time.Second)
+	if hits.Hits() != int(threshold) {
+		t.Fatalf("upstream hits after other session = %d, want %d", hits.Hits(), threshold)
+	}
+}
+
+func TestGuardLoopSkippedWithoutSessionID(t *testing.T) {
+	// Even a permanently-tripped breaker is skipped when no session id is sent.
 	h := newHarness(t, harnessOpts{
 		guardEnabled: true,
 		mgmtEnabled:  true,
 		budgetLimit:  10_000_000,
 		breaker:      fixedBreaker{tripped: true},
 	})
+	status, _, _ := h.doJSON(http.MethodPost, "/v1/chat/completions", loadFixture(t, "chat.request.json"), h.proxyHeaders(nil))
+	if status != http.StatusOK {
+		t.Fatalf("status=%d — loop check must be skipped without session id", status)
+	}
+	ev := h.waitUsage(2 * time.Second)
+	if ev.Status != "completed" {
+		t.Fatalf("usage=%q", ev.Status)
+	}
+}
+
+func TestGuardLoopDetected(t *testing.T) {
+	hits := &hitCountingUpstream{
+		next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("upstream must not be called when loop is already tripped")
+		}),
+	}
+	h := newHarness(t, harnessOpts{
+		guardEnabled: true,
+		mgmtEnabled:  true,
+		budgetLimit:  10_000_000,
+		breaker:      fixedBreaker{tripped: true},
+		upstream:     hits,
+	})
 	status, data, _ := h.doJSON(http.MethodPost, "/v1/chat/completions", loadFixture(t, "chat.request.json"), h.proxyHeaders(map[string]string{
 		"X-TokenGuard-Session-ID": "sess-loop-1",
 	}))
 	if status != http.StatusConflict || data["code"] != "loop_detected" {
 		t.Fatalf("status=%d data=%v", status, data)
+	}
+	if hits.Hits() != 0 {
+		t.Fatalf("upstream hits = %d", hits.Hits())
 	}
 	ev := h.waitUsage(2 * time.Second)
 	if ev.Status != "blocked_loop" {
