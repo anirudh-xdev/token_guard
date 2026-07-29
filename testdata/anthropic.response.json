@@ -1,0 +1,11 @@
+{
+  "id": "msg_mock",
+  "type": "message",
+  "role": "assistant",
+  "content": [{"type": "text", "text": "hi"}],
+  "model": "claude-e2e",
+  "usage": {
+    "input_tokens": 8,
+    "output_tokens": 4
+  }
+}

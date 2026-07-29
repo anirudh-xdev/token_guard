@@ -35,6 +35,15 @@ go build -o tokenguard.exe ./cmd/tokenguard
 
 4. Provision a user (mgmt enabled) and call providers through TokenGuard — see [HOW_TO_USE.md](HOW_TO_USE.md).
 
+### Automated tests
+
+```powershell
+go test ./...              # unit + offline integration
+go test ./test/... -count=1  # static JSON e2e suite only
+```
+
+Fixtures: [`testdata/`](testdata/). Suite: [`test/`](test/) (httptest mocks, no Turso/Redis).
+
 ## Documentation
 
 | Doc | Description |

@@ -1,0 +1,5 @@
+{
+  "model_key": "gpt-e2e-custom",
+  "input_usd_per_million": 0.15,
+  "output_usd_per_million": 0.6
+}

@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
 
-const openRouterModelsURL = "https://openrouter.ai/api/v1/models"
+const (
+	openRouterModelsURL    = "https://openrouter.ai/api/v1/models"
+	openRouterModelsURLEnv = "TOKENGUARD_OPENROUTER_MODELS_URL"
+)
 
 // OpenRouterModelPrice is one imported model rate from OpenRouter's public catalog.
 type OpenRouterModelPrice struct {
@@ -19,14 +23,22 @@ type OpenRouterModelPrice struct {
 	OutputCostPer1KMicroUSD int64
 }
 
+func openRouterModelsEndpoint() string {
+	if raw := strings.TrimSpace(os.Getenv(openRouterModelsURLEnv)); raw != "" {
+		return raw
+	}
+	return openRouterModelsURL
+}
+
 // FetchOpenRouterPrices downloads live OpenRouter model pricing (USD/token → micro-USD/1K).
 // For each model id "vendor/name" it returns keys: id, openrouter/id, and bare name when useful.
+// Override the URL with TOKENGUARD_OPENROUTER_MODELS_URL (used by offline tests).
 func FetchOpenRouterPrices(ctx context.Context) ([]OpenRouterModelPrice, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openRouterModelsURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openRouterModelsEndpoint(), nil)
 	if err != nil {
 		return nil, err
 	}

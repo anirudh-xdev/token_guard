@@ -12,6 +12,8 @@ TokenGuard/
 │   ├── models/                  # Pricing engine
 │   └── ui/                      # Embedded admin dashboard (dashboard.html)
 ├── pricing.json                 # Allowed models + costs
+├── testdata/                    # Static fixtures for offline e2e
+├── test/                        # Offline integration suite (package e2e)
 ├── .env.example                 # Env template
 ├── HOW_TO_USE.md                # Operator / integrator guide
 ├── README.md                    # Quick start

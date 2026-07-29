@@ -1,0 +1,14 @@
+{
+  "gpt-e2e": {
+    "input_usd_per_million": 1.0,
+    "output_usd_per_million": 2.0
+  },
+  "claude-e2e": {
+    "input_usd_per_million": 3.0,
+    "output_usd_per_million": 15.0
+  },
+  "openai/gpt-e2e": {
+    "input_usd_per_million": 1.0,
+    "output_usd_per_million": 2.0
+  }
+}

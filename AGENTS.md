@@ -19,6 +19,8 @@ Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.
 | `internal/models/` | Pricing load + cost estimate |
 | `internal/ui/` | Embedded admin dashboard |
 | `pricing.json` | Allowed models and micro-USD rates |
+| `testdata/` | Static JSON/SSE fixtures for offline e2e |
+| `test/` | Offline integration suite (mocks, no cloud) |
 | `.env.example` | Env contract |
 
 ## Invariants (do not break)
@@ -42,6 +44,7 @@ Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.
 
 ```powershell
 go test ./...
+go test ./test/... -count=1
 go build -o tokenguard.exe ./cmd/tokenguard
 ```
 

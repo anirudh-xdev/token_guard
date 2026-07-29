@@ -42,12 +42,20 @@ From `go.mod`:
 
 ## Tests
 
-Go `testing` package with `*_test.go` beside packages under `internal/proxy`, `internal/billing`, `internal/cache`, and `internal/models`.
+Go `testing` package:
+
+| Location | Role |
+|----------|------|
+| `internal/*/…_test.go` | Unit tests beside packages |
+| `test/` + `testdata/` | Offline integration suite (static JSON fixtures, httptest mocks, no Turso/Redis) |
 
 ```powershell
 go test ./...
+go test ./test/... -count=1
 ```
+
+Fixtures live in `testdata/` (chat, pricing, mgmt, OpenRouter sync mocks). Override OpenRouter sync URL in tests via `TOKENGUARD_OPENROUTER_MODELS_URL`.
 
 ## What is not in the stack (yet)
 
-No Dockerfile, CI workflows, package.json, or Kubernetes manifests in this repo.
+No CI workflows, package.json, or Kubernetes manifests in this repo.

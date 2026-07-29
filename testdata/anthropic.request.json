@@ -1,0 +1,5 @@
+{
+  "model": "claude-e2e",
+  "max_tokens": 16,
+  "messages": [{"role": "user", "content": "hi"}]
+}
