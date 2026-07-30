@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  /* Light surfaces — cool mint paper, not warm cream */
-  --ink: #f5f9f7;
-  --ink-2: #e8f1ed;
+  /* Light theme — cool mint paper (not warm cream) */
+  --ink: #f4f8f6;
+  --ink-2: #e7f0ec;
   --panel: #ffffff;
-  --line: rgba(12, 28, 24, 0.12);
-  --muted: #5a6f68;
-  --text: #0c1a16;
-  --text-dim: #3a4f47;
-  /* Deeper signal for readable text on light */
-  --signal: #0b8f63;
-  --signal-dim: rgba(11, 143, 99, 0.12);
-  --on-signal: #04150f;
-  --warn: #b86a12;
-  --danger: #c43d4e;
-  --info: #1a7aad;
-  --grid: rgba(11, 143, 99, 0.08);
+  --line: rgba(10, 28, 22, 0.11);
+  --muted: #5c7169;
+  --text: #0a1612;
+  --text-dim: #334740;
+  --signal: #0a7d58;
+  --signal-dim: rgba(10, 125, 88, 0.11);
+  --on-signal: #ffffff;
+  --warn: #a65f0a;
+  --danger: #c03648;
+  --info: #176a9a;
+  --grid: rgba(10, 125, 88, 0.07);
+  --header-bg: rgba(244, 248, 246, 0.88);
 }
 
 @theme inline {
@@ -43,6 +43,7 @@
 
 html {
   scroll-behavior: smooth;
+  color-scheme: light;
 }
 
 body {
@@ -77,8 +78,8 @@ a {
 
 .atmosphere {
   background:
-    radial-gradient(ellipse 80% 50% at 70% 8%, rgba(11, 143, 99, 0.14), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 8% 85%, rgba(26, 122, 173, 0.07), transparent 50%),
+    radial-gradient(ellipse 75% 45% at 72% 0%, rgba(10, 125, 88, 0.12), transparent 55%),
+    radial-gradient(ellipse 45% 35% at 5% 90%, rgba(23, 106, 154, 0.06), transparent 50%),
     var(--ink);
 }
 

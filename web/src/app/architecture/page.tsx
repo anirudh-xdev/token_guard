@@ -47,7 +47,7 @@ export default function ArchitecturePage() {
 
       <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8">
         {/* Diagram-led flow */}
-        <div className="overflow-x-auto border border-line bg-ink-2 p-6 site-grid sm:p-10">
+        <div className="overflow-x-auto border border-line bg-panel p-6 site-grid sm:p-10">
           <div className="flex min-w-[640px] items-center justify-between gap-3 text-center text-[0.65rem] uppercase tracking-[0.1em]">
             <Node label="Client app" />
             <Arrow />
@@ -151,10 +151,10 @@ function Node({
   const cls = accent
     ? "border-signal text-signal bg-signal/10"
     : tone === "danger"
-      ? "border-danger/50 text-danger"
+      ? "border-danger/50 text-danger bg-panel"
       : tone === "info"
-        ? "border-info/50 text-info"
-        : "border-line text-muted";
+        ? "border-info/50 text-info bg-panel"
+        : "border-line text-muted bg-panel";
 
   return (
     <div className={`min-w-[7rem] border px-3 py-3 ${cls}`}>

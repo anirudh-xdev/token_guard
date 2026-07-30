@@ -24,7 +24,7 @@ export function ProblemsSection() {
               id={p.id}
               className="grid gap-6 py-10 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_12rem] lg:gap-10"
             >
-              <span className="font-display text-3xl font-bold text-signal/40">
+              <span className="font-display text-3xl font-bold text-signal/55">
                 {p.number}
               </span>
               <div>
