@@ -39,7 +39,10 @@ TokenGuard/
 | `config.go` | New env knobs for the proxy |
 | `provider.go` | Provider routing / path inference |
 | `request_analysis.go` | Body parsing, token estimate, session/hash payload |
-| `stream_counter.go` | SSE / streaming token accounting |
+| `stream_counter.go` | SSE / streaming response wrapping and token counting |
+| `usage_extract.go` | JSON/SSE usage + text extraction (incl. OpenRouter `usage.cost`) |
+| `pricing_bootstrap.go` | Boot/periodic OpenRouter sync into Turso + in-memory catalog |
+| `pricing_mgmt.go` | Admin list/upsert/delete/sync pricing APIs |
 | `mgmt.go` | User provisioning admin API |
 | `dashboard.go` | List users / usage admin APIs |
 
@@ -51,6 +54,7 @@ TokenGuard/
 | `store.go` | Connection, migrate, open/close |
 | `usage.go` | Reserve / settle / release, key lookup |
 | `admin.go` | Create user/key, list users/usage |
+| `pricing_catalog.go` | Turso `model_prices` CRUD / seed |
 
 ### `internal/cache`
 
@@ -63,7 +67,9 @@ TokenGuard/
 
 | File | Edit when… |
 |------|------------|
-| `pricing.go` | Pricing file format or cost math |
+| `pricing.go` | Pricing engine, file load, cost estimate |
+| `openrouter_sync.go` | Fetch OpenRouter models API + sync interval env helpers |
+| `price_units.go` | USD/micro-USD conversions |
 
 ### `internal/ui`
 
