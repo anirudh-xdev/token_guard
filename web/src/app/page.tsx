@@ -50,7 +50,7 @@ export default function HomePage() {
             <div className="mt-8 flex flex-wrap gap-4 text-[0.7rem] uppercase tracking-[0.12em]">
               <Link
                 href="/how-it-works"
-                className="border border-signal bg-signal/10 px-4 py-2 text-signal transition hover:bg-signal hover:text-ink"
+                className="border border-signal bg-signal/10 px-4 py-2 text-signal transition hover:bg-signal hover:text-on-signal"
               >
                 How it works
               </Link>

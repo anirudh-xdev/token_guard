@@ -3,7 +3,7 @@ export function HeroVisual() {
   return (
     <div
       aria-hidden
-      className="anim-fade-in relative h-full min-h-[280px] w-full overflow-hidden border-l border-line bg-ink-2/80 site-grid sm:min-h-0"
+      className="anim-fade-in relative h-full min-h-[280px] w-full overflow-hidden border-l border-line bg-panel site-grid sm:min-h-0"
     >
       <div className="absolute inset-0 bg-gradient-to-br from-signal-dim via-transparent to-transparent" />
 
@@ -35,7 +35,7 @@ export function HeroVisual() {
           />
         </div>
 
-        <pre className="anim-fade-up-delay-3 mt-8 overflow-x-auto border border-line bg-ink/80 p-4 text-[0.65rem] leading-relaxed text-text-dim sm:text-[0.7rem]">
+        <pre className="anim-fade-up-delay-3 mt-8 overflow-x-auto border border-line bg-ink-2 p-4 text-[0.65rem] leading-relaxed text-text-dim sm:text-[0.7rem]">
           <code>{`{
   "error": "TokenGuard: budget exceeded",
   "available_microusd": 1200,
@@ -87,11 +87,11 @@ function FlowRow({
     >
       <span
         className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-          pulse ? "bg-signal shadow-[0_0_12px_var(--signal)]" : "bg-current opacity-60"
+          pulse ? "bg-signal shadow-[0_0_10px_rgba(11,143,99,0.45)]" : "bg-current opacity-60"
         } ${toneClass}`}
       />
       <div
-        className={`flex-1 border ${toneClass} bg-ink/40 ${compact ? "px-3 py-2" : "px-4 py-3"}`}
+        className={`flex-1 border ${toneClass} bg-ink ${compact ? "px-3 py-2" : "px-4 py-3"}`}
       >
         <p className="font-display text-sm font-semibold tracking-tight text-text sm:text-base">
           {label}

@@ -1,19 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #070b0a;
-  --ink-2: #0e1614;
-  --panel: #121c19;
-  --line: rgba(180, 220, 200, 0.12);
-  --muted: #8a9e96;
-  --text: #e8f2ed;
-  --text-dim: #b4c7be;
-  --signal: #2ee6a8;
-  --signal-dim: rgba(46, 230, 168, 0.14);
-  --warn: #ffb86b;
-  --danger: #ff6b7a;
-  --info: #6bc5ff;
-  --grid: rgba(46, 230, 168, 0.06);
+  /* Light surfaces — cool mint paper, not warm cream */
+  --ink: #f5f9f7;
+  --ink-2: #e8f1ed;
+  --panel: #ffffff;
+  --line: rgba(12, 28, 24, 0.12);
+  --muted: #5a6f68;
+  --text: #0c1a16;
+  --text-dim: #3a4f47;
+  /* Deeper signal for readable text on light */
+  --signal: #0b8f63;
+  --signal-dim: rgba(11, 143, 99, 0.12);
+  --on-signal: #04150f;
+  --warn: #b86a12;
+  --danger: #c43d4e;
+  --info: #1a7aad;
+  --grid: rgba(11, 143, 99, 0.08);
 }
 
 @theme inline {
@@ -26,6 +29,7 @@
   --color-text-dim: var(--text-dim);
   --color-signal: var(--signal);
   --color-signal-dim: var(--signal-dim);
+  --color-on-signal: var(--on-signal);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
   --color-info: var(--info);
@@ -52,7 +56,7 @@ body {
 
 ::selection {
   background: var(--signal);
-  color: var(--ink);
+  color: var(--on-signal);
 }
 
 a {
@@ -73,8 +77,8 @@ a {
 
 .atmosphere {
   background:
-    radial-gradient(ellipse 80% 50% at 70% 10%, rgba(46, 230, 168, 0.12), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 10% 80%, rgba(107, 197, 255, 0.06), transparent 50%),
+    radial-gradient(ellipse 80% 50% at 70% 8%, rgba(11, 143, 99, 0.14), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 8% 85%, rgba(26, 122, 173, 0.07), transparent 50%),
     var(--ink);
 }
 

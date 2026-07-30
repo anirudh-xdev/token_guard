@@ -16,7 +16,7 @@ export function CtaGroup({
     <div className={`flex flex-wrap items-center gap-3 ${className}`}>
       <a
         href={siteConfig.githubUrl}
-        className="inline-flex items-center bg-signal px-5 py-2.5 text-[0.75rem] font-medium uppercase tracking-[0.12em] text-ink transition hover:brightness-110"
+        className="inline-flex items-center bg-signal px-5 py-2.5 text-[0.75rem] font-medium uppercase tracking-[0.12em] text-on-signal transition hover:brightness-110"
         rel="noopener noreferrer"
         target="_blank"
       >
