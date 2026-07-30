@@ -12,6 +12,7 @@ TokenGuard/
 │   ├── models/                  # Pricing engine
 │   └── ui/                      # Embedded admin dashboard (dashboard.html)
 ├── pricing.json                 # Optional bootstrap prices (live catalog = Turso + sync)
+├── web/                         # Marketing showcase (Next.js; not the Go dashboard)
 ├── testdata/                    # Static fixtures for offline e2e
 ├── test/                        # Offline integration suite (package e2e)
 ├── .env.example                 # Env template

@@ -18,6 +18,7 @@ Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.
 | `internal/cache/` | Upstash REST + circuit breaker |
 | `internal/models/` | Pricing load + cost estimate |
 | `internal/ui/` | Embedded admin dashboard |
+| `web/` | Marketing showcase (Next.js; deploy separately) |
 | `pricing.json` | Optional bootstrap prices (seed only); live catalog = Turso + OpenRouter sync |
 | `testdata/` | Static JSON/SSE fixtures for offline e2e |
 | `test/` | Offline integration suite (mocks, no cloud) |
