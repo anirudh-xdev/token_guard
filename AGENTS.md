@@ -39,6 +39,7 @@ Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.
 - Prefer small focused changes; update neighboring `*_test.go`.
 - Match existing naming: `ConfigFromEnv`, `WithGuard`, microusd fields.
 - Do not commit `.env`, secrets, or binaries (`tokenguard.exe`).
+- Commits: short conventional subjects (`fix: …`, `feat: …`); one concern each. See `.cursor/rules/git-commits.mdc`.
 
 ## Useful commands
 

@@ -1,0 +1,33 @@
+---
+description: Standard engineering approaches for TokenGuard changes
+alwaysApply: true
+---
+
+# Engineering standards
+
+## Change size
+
+- One concern per change (budget path, loop breaker, docs — not all at once)
+- Prefer the smallest diff that solves the problem; match nearby patterns
+- Do not add abstractions, frameworks, or config knobs “for later”
+- Keep `cmd/tokenguard` thin; put logic in `internal/*`
+
+## Before you ship
+
+1. Run `go test ./...` (and `go test ./test/... -count=1` if proxy/guard/e2e touched)
+2. If you added an env var → update `.env.example`
+3. If status codes, headers, or routes changed → update `docs/API.md` (+ `HOW_TO_USE.md` if operator-facing)
+4. If pricing/models changed → update `pricing.json` only (never hardcode rates)
+
+## Safety defaults
+
+- Fail closed in guarded mode (missing Turso/Redis → `503`, never pass-through)
+- Money = `int64` micro-USD; no float ledger math
+- Strip `X-TokenGuard-*` before upstream; never log plaintext `tg_` keys
+- Unknown model → block (`400`); do not invent prices
+
+## Local sanity
+
+- Default listen is `:8080` (`.env`); smoke-test docs use `127.0.0.1:18080` only when that env is set
+- Health check: `GET /healthz` → `{"status":"ok"}`
+- Never commit `.env`, secrets, or `tokenguard.exe`

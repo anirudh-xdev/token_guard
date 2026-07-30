@@ -23,5 +23,4 @@ TokenGuard is a Go reverse proxy / financial firewall for LLM APIs.
 - Enable mgmt without guard wiring
 - Store plaintext API keys in the DB
 - Soft-fail open on missing Redis/Turso in guarded mode
-
-- always make commits shorter
+- Guess listen ports — check `TOKENGUARD_LISTEN_ADDR` / `.env` (default `:8080`)
