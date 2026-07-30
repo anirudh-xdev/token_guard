@@ -54,7 +54,7 @@ cmd/tokenguard/main.go
 2. Require `X-TokenGuard-API-Key` (or `X-TokenGuard-Key`).
 3. Read and analyze body: model, estimated input tokens (tiktoken), session id, semantic hash payload.
 4. In parallel:
-   - **Budget**: look up key → estimate cost from `pricing.json` → reserve micro-USD in Turso.
+   - **Budget**: look up key → estimate cost from pricing catalog → reserve micro-USD in Turso.
    - **Loop**: Redis `INCR` on hashed session + semantic payload; trip at threshold.
 5. On failure return JSON with `402` (budget), `409` (loop), or `503` (store/breaker unavailable).
 6. Strip TokenGuard headers; forward to upstream with provider auth headers intact.
@@ -66,7 +66,7 @@ cmd/tokenguard/main.go
 |-------|------------|------|
 | Billing ledger | Turso (libSQL) | `users`, `api_keys`, `user_budgets`, `usage_events`, `model_prices` |
 | Loop state | Upstash Redis REST | Short-TTL counters keyed by session + payload hash |
-| Pricing | Local `pricing.json` | Model input/output cost in micro-USD per 1K tokens |
+| Pricing | Turso `model_prices` (+ optional `pricing.json` seed, OpenRouter sync) | Model input/output cost in micro-USD per 1K tokens |
 
 ## Dashboard
 

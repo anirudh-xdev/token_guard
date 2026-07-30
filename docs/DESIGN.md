@@ -14,7 +14,7 @@ Design choices behind TokenGuard. Prefer these invariants when changing code.
 
 **Why:** Guessing price risks underbilling or surprise spend.
 
-**How:** Every allowed model must exist in `pricing.json`. Missing models are blocked.
+**How:** Every allowed model must exist in the live pricing catalog (Turso `model_prices`, usually filled by OpenRouter sync; optional `pricing.json` bootstrap). Missing models are blocked.
 
 ## Micro-USD integers
 

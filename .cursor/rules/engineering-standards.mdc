@@ -17,7 +17,7 @@ alwaysApply: true
 1. Run `go test ./...` (and `go test ./test/... -count=1` if proxy/guard/e2e touched)
 2. If you added an env var → update `.env.example`
 3. If status codes, headers, or routes changed → update `docs/API.md` (+ `HOW_TO_USE.md` if operator-facing)
-4. If pricing/models changed → update `pricing.json` only (never hardcode rates)
+4. If pricing/models changed → prefer OpenRouter sync / mgmt upsert; do not grow `pricing.json` for every new model
 
 ## Safety defaults
 

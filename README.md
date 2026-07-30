@@ -25,7 +25,7 @@ Invoke-WebRequest http://127.0.0.1:18080/healthz -UseBasicParsing
 ### Guarded mode
 
 1. Copy [`.env.example`](.env.example) to `.env` and fill Turso + Upstash credentials.
-2. Ensure models you use exist in [`pricing.json`](pricing.json).
+2. Ensure models you use exist in the pricing catalog (OpenRouter sync is on by default; `pricing.json` is optional bootstrap).
 3. Build and run:
 
 ```powershell

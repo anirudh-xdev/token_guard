@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -188,7 +187,7 @@ func (h *Handler) HandleSyncOpenRouterPricing(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	imported, err := syncOpenRouterIntoStore(r.Context(), h.budgetStore, h.pricing)
+	imported, err := SyncOpenRouterIntoStore(r.Context(), h.budgetStore, h.pricing)
 	if err != nil {
 		writeManagementJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -199,28 +198,4 @@ func (h *Handler) HandleSyncOpenRouterPricing(w http.ResponseWriter, r *http.Req
 		"source":        "https://openrouter.ai/api/v1/models",
 		"note":          "Live OpenRouter USD rates; stored as micro-USD/1K and exposed as usd_per_million.",
 	})
-}
-
-func syncOpenRouterIntoStore(ctx context.Context, store BudgetStore, pricing *models.PricingEngine) (int, error) {
-	fetched, err := models.FetchOpenRouterPrices(ctx)
-	if err != nil {
-		return 0, err
-	}
-	imported := 0
-	for _, row := range fetched {
-		mp := billing.ModelPrice{
-			ModelKey:        row.ModelKey,
-			InputCostPer1K:  row.InputCostPer1KMicroUSD,
-			OutputCostPer1K: row.OutputCostPer1KMicroUSD,
-		}
-		if err := store.UpsertModelPrice(ctx, mp); err != nil {
-			return imported, err
-		}
-		_ = pricing.Upsert(row.ModelKey, models.Price{
-			InputCostPer1KMicroUSD:  row.InputCostPer1KMicroUSD,
-			OutputCostPer1KMicroUSD: row.OutputCostPer1KMicroUSD,
-		})
-		imported++
-	}
-	return imported, nil
 }

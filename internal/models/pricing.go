@@ -73,6 +73,63 @@ func LoadPricingFile(ctx context.Context, path string) (*PricingEngine, error) {
 	return NewPricingEngine(table)
 }
 
+// LoadPricingFileOrEmpty loads pricing.json when present.
+// A missing file yields an empty engine so Turso / OpenRouter sync can populate the catalog.
+func LoadPricingFileOrEmpty(ctx context.Context, path string) (*PricingEngine, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if path = strings.TrimSpace(path); path == "" {
+		path = defaultPricingFile
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	resolved, err := resolvePricingPath(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || isPricingMissing(err) {
+			return EmptyPricingEngine(), nil
+		}
+		return nil, fmt.Errorf("read pricing file %q: %w", path, err)
+	}
+
+	raw, err := os.ReadFile(resolved)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return EmptyPricingEngine(), nil
+		}
+		return nil, fmt.Errorf("read pricing file %q: %w", resolved, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return EmptyPricingEngine(), nil
+	}
+
+	var table map[string]Price
+	if err := json.Unmarshal(raw, &table); err != nil {
+		return nil, fmt.Errorf("decode pricing file %q: %w", resolved, err)
+	}
+	if len(table) == 0 {
+		return EmptyPricingEngine(), nil
+	}
+	return NewPricingEngine(table)
+}
+
+func isPricingMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "not found in working directory")
+}
+
+// EmptyPricingEngine returns a catalog with zero models (filled later from DB/sync).
+func EmptyPricingEngine() *PricingEngine {
+	return &PricingEngine{prices: make(map[string]Price)}
+}
+
 // resolvePricingPath tries the given path, then the same relative path next to the executable.
 func resolvePricingPath(path string) (string, error) {
 	if _, err := os.Stat(path); err == nil {
@@ -97,10 +154,6 @@ func errFromMissing(path string) error {
 }
 
 func NewPricingEngine(table map[string]Price) (*PricingEngine, error) {
-	if len(table) == 0 {
-		return nil, errors.New("pricing table is empty")
-	}
-
 	prices := make(map[string]Price, len(table))
 	for model, price := range table {
 		model = strings.TrimSpace(model)
@@ -232,6 +285,7 @@ func stripModelSnapshotSuffix(model string) string {
 }
 
 // ReplaceAll atomically replaces the in-memory catalog (used after DB seed/reload).
+// An empty table is rejected so a failed sync cannot wipe a last-good catalog.
 func (e *PricingEngine) ReplaceAll(table map[string]Price) error {
 	if e == nil {
 		return errors.New("pricing engine is nil")

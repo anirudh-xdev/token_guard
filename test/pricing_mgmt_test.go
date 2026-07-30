@@ -96,6 +96,16 @@ func TestPricingSyncOpenRouterMock(t *testing.T) {
 	if !found {
 		t.Fatalf("synced model not in catalog: %#v", data["prices"])
 	}
+
+	// Unknown model still fail-closed after successful sync of other models.
+	req := []byte(`{"model":"totally-unknown-model-xyz","messages":[{"role":"user","content":"hi"}],"max_tokens":8}`)
+	status, data, _ = h.doJSON(http.MethodPost, "/v1/chat/completions", req, h.proxyHeaders(nil))
+	if status != http.StatusBadRequest {
+		t.Fatalf("unknown model status = %d data=%v", status, data)
+	}
+	if data["code"] != "pricing_not_configured" {
+		t.Fatalf("code = %v", data["code"])
+	}
 }
 
 func TestPricingSyncOpenRouterFailure(t *testing.T) {

@@ -4,9 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -32,7 +30,11 @@ func main() {
 		log.Fatal("management endpoints require TOKENGUARD_GUARD_ENABLED=true")
 	}
 
-	var options []proxy.HandlerOption
+	var (
+		options       []proxy.HandlerOption
+		billingStore  *billing.Store
+		pricingEngine *models.PricingEngine
+	)
 	if config.GuardEnabled {
 		// Turso/Upstash over the public internet often need more than a few seconds
 		// (migrate + seed + redis ping), especially on cold deploy.
@@ -73,15 +75,23 @@ func main() {
 			log.Fatalf("open circuit breaker: %v", err)
 		}
 
-		pricing, err := models.LoadPricingFile(initCtx, models.PricingFileFromEnv())
+		pricing, err := models.LoadPricingFileOrEmpty(initCtx, models.PricingFileFromEnv())
 		if err != nil {
 			log.Fatalf("load pricing: %v", err)
 		}
 
-		// Seed empty DB catalog from pricing.json, then prefer DB as live source of truth.
-		// Soft-fail: file-backed pricing keeps the proxy up if Turso is slow/flaky.
-		seedCatalog(initCtx, store, pricing)
+		// Independent of the shared init deadline — Turso HTTP can be slow on cold start.
+		seedCtx, seedCancel := context.WithTimeout(context.Background(), 45*time.Second)
+		err = proxy.BootstrapPricingCatalog(seedCtx, store, pricing, proxy.BootstrapPricingOptions{
+			SyncOpenRouter: models.PricingSyncOpenRouterEnabled(),
+		})
+		seedCancel()
+		if err != nil {
+			log.Fatalf("pricing catalog: %v", err)
+		}
 
+		billingStore = store
+		pricingEngine = pricing
 		options = append(options, proxy.WithGuard(store, pricing, breaker))
 	} else {
 		log.Print("TokenGuard guard disabled; running reverse proxy without budget or loop checks")
@@ -130,6 +140,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if config.GuardEnabled && models.PricingSyncOpenRouterEnabled() {
+		if interval := models.PricingSyncInterval(); interval > 0 {
+			log.Printf("openrouter pricing sync interval %s", interval)
+			go proxy.RunPricingSyncLoop(ctx, billingStore, pricingEngine, interval)
+		}
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("TokenGuard proxy listening on %s -> %s", config.ListenAddr, config.UpstreamURL)
@@ -149,86 +166,4 @@ func main() {
 			log.Fatalf("serve proxy: %v", err)
 		}
 	}
-}
-
-// seedCatalog best-effort syncs pricing.json into Turso and reloads the in-memory engine.
-// Failures fall back to the already-loaded file catalog so deploys stay healthy.
-func seedCatalog(_ context.Context, store *billing.Store, pricing *models.PricingEngine) {
-	// Independent of the shared init deadline — Turso HTTP can be slow on cold start.
-	seedCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-
-	seed := make(map[string]billing.ModelPrice)
-	for key, price := range pricing.Snapshot() {
-		seed[key] = billing.ModelPrice{
-			ModelKey:        key,
-			InputCostPer1K:  price.InputCostPer1KMicroUSD,
-			OutputCostPer1K: price.OutputCostPer1KMicroUSD,
-		}
-	}
-
-	inserted, err := store.SeedModelPrices(seedCtx, seed)
-	if err != nil {
-		log.Printf("warning: seed model prices skipped (using file pricing): %v", err)
-	} else if inserted > 0 {
-		log.Printf("seeded %d model prices from pricing file into DB", inserted)
-	}
-
-	// Fill any new models from pricing.json without overwriting operator edits.
-	if missing, err := store.UpsertMissingModelPrices(seedCtx, seed); err != nil {
-		log.Printf("warning: merge missing model prices: %v", err)
-	} else if missing > 0 {
-		log.Printf("added %d missing model prices from pricing file", missing)
-	}
-
-	// Optional: pull live OpenRouter rates on boot (real market prices).
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TOKENGUARD_PRICING_SYNC_OPENROUTER")), "true") {
-		syncCtx, syncCancel := context.WithTimeout(context.Background(), 45*time.Second)
-		fetched, err := models.FetchOpenRouterPrices(syncCtx)
-		syncCancel()
-		if err != nil {
-			log.Printf("warning: openrouter pricing sync on boot failed: %v", err)
-		} else {
-			n := 0
-			for _, row := range fetched {
-				mp := billing.ModelPrice{
-					ModelKey:        row.ModelKey,
-					InputCostPer1K:  row.InputCostPer1KMicroUSD,
-					OutputCostPer1K: row.OutputCostPer1KMicroUSD,
-				}
-				if err := store.UpsertModelPrice(seedCtx, mp); err != nil {
-					log.Printf("warning: openrouter upsert %s: %v", row.ModelKey, err)
-					break
-				}
-				_ = pricing.Upsert(row.ModelKey, models.Price{
-					InputCostPer1KMicroUSD:  row.InputCostPer1KMicroUSD,
-					OutputCostPer1KMicroUSD: row.OutputCostPer1KMicroUSD,
-				})
-				n++
-			}
-			log.Printf("synced %d openrouter price rows on boot", n)
-		}
-	}
-
-	dbPrices, err := store.LoadModelPriceMap(seedCtx)
-	if err != nil {
-		log.Printf("warning: load model prices from DB failed (using file pricing): %v", err)
-		return
-	}
-	if len(dbPrices) == 0 {
-		log.Printf("pricing catalog empty in DB; continuing with file pricing (%d models)", pricing.ModelCount())
-		return
-	}
-	live := make(map[string]models.Price, len(dbPrices))
-	for key, p := range dbPrices {
-		live[key] = models.Price{
-			InputCostPer1KMicroUSD:  p.InputCostPer1K,
-			OutputCostPer1KMicroUSD: p.OutputCostPer1K,
-		}
-	}
-	if err := pricing.ReplaceAll(live); err != nil {
-		log.Printf("warning: replace pricing from DB failed (using file pricing): %v", err)
-		return
-	}
-	log.Printf("pricing catalog loaded from DB (%d models)", len(live))
 }

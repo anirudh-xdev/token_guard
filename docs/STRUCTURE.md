@@ -11,7 +11,7 @@ TokenGuard/
 │   ├── cache/                   # Upstash Redis client + circuit breaker
 │   ├── models/                  # Pricing engine
 │   └── ui/                      # Embedded admin dashboard (dashboard.html)
-├── pricing.json                 # Allowed models + costs
+├── pricing.json                 # Optional bootstrap prices (live catalog = Turso + sync)
 ├── testdata/                    # Static fixtures for offline e2e
 ├── test/                        # Offline integration suite (package e2e)
 ├── .env.example                 # Env template
@@ -76,7 +76,7 @@ TokenGuard/
 
 | File | Edit when… |
 |------|------------|
-| `pricing.json` | Adding or updating model prices |
+| `pricing.json` | Optional bootstrap / override seed only |
 | `.env.example` | Documenting new environment variables |
 
 ## Conventions
@@ -84,4 +84,4 @@ TokenGuard/
 - Keep business logic in `internal/*`; `cmd` only wires dependencies.
 - Prefer env config over CLI flags.
 - Add or update unit tests next to the package you change.
-- Do not invent model prices in code—update `pricing.json`.
+- Do not invent model prices in code—use OpenRouter sync / Turso catalog (or bootstrap `pricing.json`).

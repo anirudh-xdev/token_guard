@@ -14,7 +14,43 @@ import (
 const (
 	openRouterModelsURL    = "https://openrouter.ai/api/v1/models"
 	openRouterModelsURLEnv = "TOKENGUARD_OPENROUTER_MODELS_URL"
+	pricingSyncOpenRouterEnv = "TOKENGUARD_PRICING_SYNC_OPENROUTER"
+	pricingSyncIntervalEnv   = "TOKENGUARD_PRICING_SYNC_INTERVAL"
+	defaultPricingSyncInterval = 6 * time.Hour
 )
+
+// PricingSyncOpenRouterEnabled reports whether OpenRouter catalog sync should run.
+// When the env is unset, defaults to true (recommended for guarded mode).
+// Explicit "false" / "0" disables sync.
+func PricingSyncOpenRouterEnabled() bool {
+	raw := strings.TrimSpace(os.Getenv(pricingSyncOpenRouterEnv))
+	if raw == "" {
+		return true
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// PricingSyncInterval returns how often to refresh OpenRouter prices in the background.
+// Empty env → 6h. "0" → boot-only (no periodic refresh).
+func PricingSyncInterval() time.Duration {
+	raw := strings.TrimSpace(os.Getenv(pricingSyncIntervalEnv))
+	if raw == "" {
+		return defaultPricingSyncInterval
+	}
+	if raw == "0" {
+		return 0
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		return defaultPricingSyncInterval
+	}
+	return d
+}
 
 // OpenRouterModelPrice is one imported model rate from OpenRouter's public catalog.
 type OpenRouterModelPrice struct {

@@ -11,7 +11,7 @@ Recommended host: **Render** (Docker). Repo: `https://github.com/anirudh-xdev/to
 | App binary | This repo (`Dockerfile`) |
 | Users / budgets / usage | Turso (`TURSO_*`) |
 | Loop breaker | Upstash Redis REST (`UPSTASH_*`) |
-| Model prices | `pricing.json` (copied into the image) |
+| Model prices | Turso `model_prices` (OpenRouter sync; optional `pricing.json` bootstrap in image) |
 
 ## Flow
 
