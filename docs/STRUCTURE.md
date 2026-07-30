@@ -11,7 +11,7 @@ TokenGuard/
 │   ├── cache/                   # Upstash Redis client + circuit breaker
 │   ├── models/                  # Pricing engine
 │   └── ui/                      # Embedded admin dashboard (dashboard.html)
-├── pricing.json                 # Allowed models + costs
+├── pricing.json                 # Optional bootstrap prices (live catalog = Turso + sync)
 ├── testdata/                    # Static fixtures for offline e2e
 ├── test/                        # Offline integration suite (package e2e)
 ├── .env.example                 # Env template
@@ -39,7 +39,10 @@ TokenGuard/
 | `config.go` | New env knobs for the proxy |
 | `provider.go` | Provider routing / path inference |
 | `request_analysis.go` | Body parsing, token estimate, session/hash payload |
-| `stream_counter.go` | SSE / streaming token accounting |
+| `stream_counter.go` | SSE / streaming response wrapping and token counting |
+| `usage_extract.go` | JSON/SSE usage + text extraction (incl. OpenRouter `usage.cost`) |
+| `pricing_bootstrap.go` | Boot/periodic OpenRouter sync into Turso + in-memory catalog |
+| `pricing_mgmt.go` | Admin list/upsert/delete/sync pricing APIs |
 | `mgmt.go` | User provisioning admin API |
 | `dashboard.go` | List users / usage admin APIs |
 
@@ -51,6 +54,7 @@ TokenGuard/
 | `store.go` | Connection, migrate, open/close |
 | `usage.go` | Reserve / settle / release, key lookup |
 | `admin.go` | Create user/key, list users/usage |
+| `pricing_catalog.go` | Turso `model_prices` CRUD / seed |
 
 ### `internal/cache`
 
@@ -63,7 +67,9 @@ TokenGuard/
 
 | File | Edit when… |
 |------|------------|
-| `pricing.go` | Pricing file format or cost math |
+| `pricing.go` | Pricing engine, file load, cost estimate |
+| `openrouter_sync.go` | Fetch OpenRouter models API + sync interval env helpers |
+| `price_units.go` | USD/micro-USD conversions |
 
 ### `internal/ui`
 
@@ -76,7 +82,7 @@ TokenGuard/
 
 | File | Edit when… |
 |------|------------|
-| `pricing.json` | Adding or updating model prices |
+| `pricing.json` | Optional bootstrap / override seed only |
 | `.env.example` | Documenting new environment variables |
 
 ## Conventions
@@ -84,4 +90,4 @@ TokenGuard/
 - Keep business logic in `internal/*`; `cmd` only wires dependencies.
 - Prefer env config over CLI flags.
 - Add or update unit tests next to the package you change.
-- Do not invent model prices in code—update `pricing.json`.
+- Do not invent model prices in code—use OpenRouter sync / Turso catalog (or bootstrap `pricing.json`).

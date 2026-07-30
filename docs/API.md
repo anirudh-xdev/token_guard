@@ -98,7 +98,13 @@ X-TokenGuard-Admin-Secret: your-admin-secret
 {"model_key":"gpt-4o-mini","input_usd_per_million":0.15,"output_usd_per_million":0.6}
 ```
 
-Costs are **USD per 1M tokens** in the dashboard/API (`input_usd_per_million`). Internally TokenGuard stores micro-USD per 1K for integer budget math. Live catalog lives in Turso `model_prices` (seeded from `pricing.json`; use **Sync OpenRouter** for real market rates). Set `TOKENGUARD_PRICING_SYNC_OPENROUTER=true` to refresh OpenRouter rates on boot.
+Costs are **USD per 1M tokens** in the dashboard/API (`input_usd_per_million`). Internally TokenGuard stores micro-USD per 1K for integer budget math.
+
+Live catalog lives in Turso `model_prices`. Recommended flow:
+
+- Boot + periodic **OpenRouter sync** (`TOKENGUARD_PRICING_SYNC_OPENROUTER`, default on when unset; `TOKENGUARD_PRICING_SYNC_INTERVAL`, default `6h`)
+- Optional `pricing.json` only as bootstrap / offline seed / rare overrides
+- Dashboard **Sync OpenRouter** or `POST /mgmt/pricing/sync/openrouter` for an on-demand refresh
 
 When OpenRouter returns `usage.cost`, settlement uses that provider-billed USD amount instead of the catalog estimate.
 

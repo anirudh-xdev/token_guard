@@ -1,0 +1,47 @@
+---
+description: Short, reliable git commits for TokenGuard
+alwaysApply: true
+---
+
+# Git commits
+
+Commit **only when the user asks**. Keep commits short, atomic, and trustworthy.
+
+## Message format
+
+```text
+<type>: <why in ≤72 chars>
+```
+
+Optional body (1–3 lines) only when the subject cannot explain risk or migration.
+
+**Types:** `feat` · `fix` · `docs` · `test` · `refactor` · `chore` · `perf`
+
+```text
+# ✅ GOOD
+fix: fail closed when Upstash ping fails
+feat: add usage list limit to dashboard API
+docs: clarify healthz port in smoke test
+
+# ❌ BAD
+Update stuff
+Fixed bugs and added features and updated docs
+WIP / temp / asdf
+```
+
+## Rules
+
+- **One logical change** per commit (code + its tests + its docs together is OK)
+- Subject: imperative, no trailing period, focus on **why** not file lists
+- Prefer several small commits over one mixed “everything” commit
+- Do not stage `.env`, credentials, binaries, or local caches
+- Do not amend, force-push, or skip hooks unless the user explicitly asks
+- After commit: verify with `git status` (clean or only unrelated leftovers)
+
+## Reliability checklist
+
+Before committing when asked:
+
+1. `git status` + `git diff` — only intended files
+2. Relevant tests green (`go test ./...` for Go changes)
+3. Message matches the actual diff (no “fix” for pure docs)

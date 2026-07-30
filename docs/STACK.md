@@ -37,7 +37,7 @@ From `go.mod`:
 
 | Artifact | Detail |
 |----------|--------|
-| `pricing.json` | Model prices in micro-USD per 1K input/output tokens |
+| `pricing.json` | Optional bootstrap; live rates from Turso / OpenRouter sync |
 | SQLite schema (via Turso) | See `internal/billing/schema.go` |
 
 ## Tests

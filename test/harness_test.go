@@ -613,8 +613,57 @@ func (b fixedBreaker) Check(ctx context.Context, sessionID string, payload []byt
 	return cache.CircuitBreakerResult{Tripped: b.tripped}, nil
 }
 
+// countingBreaker mirrors Redis loop semantics: same session+payload increments a counter;
+// trip when count >= threshold (default 3).
+type countingBreaker struct {
+	mu        sync.Mutex
+	threshold int64
+	counts    map[string]int64
+}
+
+func newCountingBreaker(threshold int64) *countingBreaker {
+	if threshold <= 0 {
+		threshold = 3
+	}
+	return &countingBreaker{threshold: threshold, counts: map[string]int64{}}
+}
+
+func (b *countingBreaker) Check(ctx context.Context, sessionID string, payload []byte) (cache.CircuitBreakerResult, error) {
+	key := cache.HashText(sessionID) + ":" + cache.HashBytes(payload)
+	b.mu.Lock()
+	b.counts[key]++
+	count := b.counts[key]
+	b.mu.Unlock()
+	return cache.CircuitBreakerResult{
+		Count:     count,
+		Threshold: b.threshold,
+		Tripped:   count >= b.threshold,
+	}, nil
+}
+
+// hitCountingUpstream wraps a handler and counts how many times upstream was reached.
+type hitCountingUpstream struct {
+	mu   sync.Mutex
+	hits int
+	next http.Handler
+}
+
+func (u *hitCountingUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	u.mu.Lock()
+	u.hits++
+	u.mu.Unlock()
+	u.next.ServeHTTP(w, r)
+}
+
+func (u *hitCountingUpstream) Hits() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.hits
+}
+
 // Ensure interfaces compile.
 var (
 	_ proxy.BudgetStore = (*memoryStore)(nil)
 	_ proxy.LoopBreaker = fixedBreaker{}
+	_ proxy.LoopBreaker = (*countingBreaker)(nil)
 )

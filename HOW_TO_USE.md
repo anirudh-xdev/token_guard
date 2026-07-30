@@ -100,6 +100,8 @@ UPSTASH_REDIS_REST_URL=https://your-redis-instance.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your_upstash_token
 
 TOKENGUARD_PRICING_FILE=pricing.json
+TOKENGUARD_PRICING_SYNC_OPENROUTER=true
+TOKENGUARD_PRICING_SYNC_INTERVAL=6h
 TOKENGUARD_DEFAULT_PROVIDER=openai
 TOKENGUARD_UPSTREAM_URL=https://api.openai.com
 
@@ -119,8 +121,8 @@ TokenGuard will:
 - Connect to Turso.
 - Run database migrations.
 - Connect to Upstash Redis.
-- Load `pricing.json`.
-- Start the proxy server.
+- Load optional `pricing.json` bootstrap, sync OpenRouter rates into Turso (default), and build the live pricing catalog.
+- Start the proxy server (background pricing refresh on `TOKENGUARD_PRICING_SYNC_INTERVAL`).
 
 ## Configure Multiple Providers
 
@@ -148,53 +150,52 @@ If no provider is specified, TokenGuard uses `TOKENGUARD_DEFAULT_PROVIDER`.
 
 ## Pricing Setup
 
-Every model that TokenGuard allows must exist in `pricing.json`.
+Every model TokenGuard allows must exist in the **live pricing catalog** (Turso `model_prices` → in-memory engine).
 
-Costs are stored in **micro-USD per 1K tokens**:
+### Recommended: auto-sync from OpenRouter
 
-```text
-1 USD = 1,000,000 micro-USD
-$X per 1M tokens  →  input_cost_per_1k = X * 1000
+Do **not** hand-edit `pricing.json` for every new provider model. Enable sync (default when unset):
+
+```env
+TOKENGUARD_PRICING_SYNC_OPENROUTER=true
+TOKENGUARD_PRICING_SYNC_INTERVAL=6h
 ```
 
-Example: GPT-4o at $2.50 / $10.00 per 1M tokens:
+On boot (and on the interval), TokenGuard imports published OpenRouter model rates. You can also click **Sync OpenRouter** in the dashboard or:
 
-```json
-{
-  "gpt-4o": {
-    "input_cost_per_1k": 2500,
-    "output_cost_per_1k": 10000
-  }
-}
+```http
+POST /mgmt/pricing/sync/openrouter
+X-TokenGuard-Admin-Secret: your-admin-secret
 ```
 
-Basic format:
+`pricing.json` is optional: bootstrap / offline smoke / rare sticky overrides only.
+
+### Manual overrides
+
+Prefer dashboard upsert or:
+
+```http
+POST /mgmt/pricing/upsert
+```
+
+with `input_usd_per_million` / `output_usd_per_million`. Internally costs are micro-USD per 1K tokens.
+
+Optional file bootstrap format:
 
 ```json
 {
   "gpt-4o-mini": {
-    "input_cost_per_1k": 150,
-    "output_cost_per_1k": 600
-  }
-}
-```
-
-You can also use provider-scoped model names:
-
-```json
-{
-  "anthropic/claude-sonnet-4-6": {
-    "input_cost_per_1k": 3000,
-    "output_cost_per_1k": 15000
+    "input_usd_per_million": 0.15,
+    "output_usd_per_million": 0.6
   },
-  "openrouter/openai/gpt-4o-mini": {
-    "input_cost_per_1k": 150,
-    "output_cost_per_1k": 600
+  "anthropic/claude-sonnet-4-6": {
+    "input_usd_per_million": 3.0,
+    "output_usd_per_million": 15.0
   }
 }
 ```
 
-If a model is missing from `pricing.json`, TokenGuard blocks the request with `400` instead of guessing.
+If a model is missing from the catalog, TokenGuard blocks the request with `400` (`pricing_not_configured`) instead of guessing.
 
 ## Provision A User
 
@@ -268,16 +269,7 @@ Configure Anthropic:
 TOKENGUARD_PROVIDER_ROUTES=anthropic=https://api.anthropic.com
 ```
 
-Add Anthropic model pricing to `pricing.json`:
-
-```json
-{
-  "anthropic/claude-3-5-sonnet-latest": {
-    "input_cost_per_1k": 3000,
-    "output_cost_per_1k": 15000
-  }
-}
-```
+Ensure Anthropic models are in the catalog (OpenRouter sync usually covers them). For a custom rate, upsert via `/mgmt/pricing/upsert` or add a bootstrap row in `pricing.json`.
 
 Request:
 
@@ -432,7 +424,7 @@ For each application using TokenGuard:
 - Add `X-TokenGuard-API-Key`.
 - Add `X-TokenGuard-Provider` if using multiple providers.
 - Add `X-TokenGuard-Session-ID` for agents or long-running workflows.
-- Make sure the model exists in `pricing.json`.
+- Make sure the model exists in the pricing catalog (sync OpenRouter or upsert).
 
 ## Product Summary
 

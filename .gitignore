@@ -12,3 +12,6 @@ coverage.out
 
 # Optional local tiktoken dictionary cache
 .tiktoken-cache/
+
+# Project-specific files
+project_does.txt

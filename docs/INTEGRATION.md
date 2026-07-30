@@ -16,7 +16,7 @@ AFTER:   App ──► TokenGuard ──► provider
 5. Add `X-TokenGuard-API-Key: tg_...`.
 6. Add `X-TokenGuard-Provider` when using multiple providers.
 7. Add `X-TokenGuard-Session-ID` for agents / loops.
-8. Ensure the model exists in `pricing.json`.
+8. Ensure the model exists in the pricing catalog (OpenRouter sync / Turso). Do not rely on hand-editing `pricing.json` for every new model.
 
 ## Headers
 
@@ -85,7 +85,7 @@ const client = new OpenAI({
 });
 ```
 
-Use models that exist in `pricing.json` (e.g. `openai/gpt-4o-mini` or `gpt-4o-mini` depending on how you call the provider).
+Use models that exist in the pricing catalog after OpenRouter sync (e.g. `openai/gpt-4o-mini` or `gpt-4o-mini` depending on how you call the provider).
 
 ## Anthropic Messages API
 

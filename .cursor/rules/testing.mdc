@@ -1,0 +1,20 @@
+---
+description: Testing expectations when changing TokenGuard Go or fixtures
+globs: "**/*.{go,json}"
+alwaysApply: false
+---
+
+# Testing
+
+- Prefer table-driven unit tests next to the package (`foo_test.go`)
+- Guard/proxy/status-code changes: cover happy path + fail-closed paths
+- Offline e2e lives in `test/` with fixtures in `testdata/` — no real Turso/Redis
+- Do not hit live providers in automated tests; use `httptest` mocks
+- After behavior changes, keep assertions aligned with `docs/API.md` status codes
+
+```powershell
+go test ./...
+go test ./test/... -count=1
+```
+
+Skip flaky sleeps/network in unit tests; keep e2e deterministic and offline.
