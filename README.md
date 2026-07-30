@@ -44,6 +44,10 @@ go test ./test/... -count=1  # static JSON e2e suite only
 
 Fixtures: [`testdata/`](testdata/). Suite: [`test/`](test/) (httptest mocks, no Turso/Redis).
 
+## Showcase site
+
+Product marketing lives in [`web/`](web/) (Next.js) — separate from the embedded `/dashboard`. See [web/README.md](web/README.md).
+
 ## Documentation
 
 | Doc | Description |
