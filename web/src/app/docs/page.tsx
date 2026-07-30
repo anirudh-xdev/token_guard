@@ -66,7 +66,8 @@ export default function DocsPage() {
         {liveDocs ? (
           <a
             href={liveDocs}
-            className="mb-10 block border border-signal/40 bg-signal/5 px-5 py-4 text-sm text-signal transition hover:bg-signal/10"
+            className="mb-10 block border border-signal/30 bg-signal-dim px-5 py-4 text-sm text-signal transition hover:brightness-95"
+            style={{ boxShadow: "var(--shadow-sm)" }}
             rel="noopener noreferrer"
             target="_blank"
           >

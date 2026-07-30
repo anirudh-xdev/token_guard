@@ -40,11 +40,11 @@ export function RequestPath() {
         {steps.map((step, i) => (
           <li
             key={step.n}
-            className="anim-step relative grid gap-4 border-l border-line py-6 pl-8 sm:grid-cols-[3rem_1fr] sm:gap-8"
+            className="anim-step relative grid gap-4 border-l-2 border-signal/25 py-6 pl-8 sm:grid-cols-[3rem_1fr] sm:gap-8"
             style={{ animationDelay: `${i * 0.08}s` }}
           >
-            <span className="absolute -left-[5px] top-8 h-2.5 w-2.5 rounded-full bg-signal" />
-            <span className="font-display text-2xl font-bold text-signal/50">
+            <span className="absolute -left-[6px] top-8 h-2.5 w-2.5 rounded-full border-2 border-panel bg-signal shadow-[0_0_0_3px_var(--signal-dim)]" />
+            <span className="font-display text-2xl font-bold text-signal/45">
               {step.n}
             </span>
             <div>
@@ -59,7 +59,10 @@ export function RequestPath() {
         ))}
       </ol>
 
-      <div className="mt-12 border border-line bg-panel p-6 sm:p-8">
+      <div
+        className="mt-12 border border-line bg-panel p-6 sm:p-8"
+        style={{ boxShadow: "var(--shadow-md)" }}
+      >
         <p className="text-[0.7rem] uppercase tracking-[0.16em] text-signal">
           Try it
         </p>

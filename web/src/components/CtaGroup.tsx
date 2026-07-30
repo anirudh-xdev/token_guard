@@ -16,7 +16,7 @@ export function CtaGroup({
     <div className={`flex flex-wrap items-center gap-3 ${className}`}>
       <a
         href={siteConfig.githubUrl}
-        className="inline-flex items-center bg-signal px-5 py-2.5 text-[0.75rem] font-medium uppercase tracking-[0.12em] text-on-signal transition hover:brightness-95"
+        className="btn-primary inline-flex items-center px-5 py-2.5 text-[0.75rem] font-medium uppercase tracking-[0.12em]"
         rel="noopener noreferrer"
         target="_blank"
       >
@@ -25,7 +25,7 @@ export function CtaGroup({
       {liveDocs ? (
         <a
           href={liveDocs}
-          className="inline-flex items-center border border-line px-5 py-2.5 text-[0.75rem] uppercase tracking-[0.12em] text-text transition hover:border-signal hover:text-signal"
+          className="btn-ghost inline-flex items-center px-5 py-2.5 text-[0.75rem] uppercase tracking-[0.12em] text-text"
           rel="noopener noreferrer"
           target="_blank"
         >
@@ -34,7 +34,7 @@ export function CtaGroup({
       ) : (
         <a
           href={`${siteConfig.githubUrl}/blob/main/HOW_TO_USE.md`}
-          className="inline-flex items-center border border-line px-5 py-2.5 text-[0.75rem] uppercase tracking-[0.12em] text-text transition hover:border-signal hover:text-signal"
+          className="btn-ghost inline-flex items-center px-5 py-2.5 text-[0.75rem] uppercase tracking-[0.12em] text-text"
           rel="noopener noreferrer"
           target="_blank"
         >

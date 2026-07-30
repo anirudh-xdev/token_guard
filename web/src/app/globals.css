@@ -1,22 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  /* Light theme — cool mint paper (not warm cream) */
-  --ink: #f4f8f6;
-  --ink-2: #e7f0ec;
+  /* Light · cool mint paper (not warm cream / not purple) */
+  --ink: #f7fbf9;
+  --ink-2: #eef5f1;
   --panel: #ffffff;
-  --line: rgba(10, 28, 22, 0.11);
-  --muted: #5c7169;
-  --text: #0a1612;
-  --text-dim: #334740;
-  --signal: #0a7d58;
-  --signal-dim: rgba(10, 125, 88, 0.11);
+  --line: rgba(8, 32, 24, 0.1);
+  --muted: #5a6f66;
+  --text: #071410;
+  --text-dim: #2a3d36;
+  --signal: #067a52;
+  --signal-bright: #0a9a68;
+  --signal-dim: rgba(6, 122, 82, 0.1);
   --on-signal: #ffffff;
-  --warn: #a65f0a;
-  --danger: #c03648;
-  --info: #176a9a;
-  --grid: rgba(10, 125, 88, 0.07);
-  --header-bg: rgba(244, 248, 246, 0.88);
+  --warn: #9a5a08;
+  --warn-dim: rgba(154, 90, 8, 0.1);
+  --danger: #c12d42;
+  --danger-dim: rgba(193, 45, 66, 0.08);
+  --info: #0f6a9c;
+  --info-dim: rgba(15, 106, 156, 0.08);
+  --grid: rgba(6, 122, 82, 0.055);
+  --header-bg: rgba(247, 251, 249, 0.82);
+  --shadow-sm: 0 1px 2px rgba(7, 20, 16, 0.04);
+  --shadow-md: 0 8px 28px rgba(7, 20, 16, 0.06), 0 2px 8px rgba(7, 20, 16, 0.03);
+  --shadow-lg: 0 24px 48px rgba(7, 20, 16, 0.08), 0 8px 16px rgba(6, 122, 82, 0.04);
 }
 
 @theme inline {
@@ -28,11 +35,15 @@
   --color-text: var(--text);
   --color-text-dim: var(--text-dim);
   --color-signal: var(--signal);
+  --color-signal-bright: var(--signal-bright);
   --color-signal-dim: var(--signal-dim);
   --color-on-signal: var(--on-signal);
   --color-warn: var(--warn);
+  --color-warn-dim: var(--warn-dim);
   --color-danger: var(--danger);
+  --color-danger-dim: var(--danger-dim);
   --color-info: var(--info);
+  --color-info-dim: var(--info-dim);
   --font-display: var(--font-syne);
   --font-mono: var(--font-plex-mono);
 }
@@ -73,14 +84,46 @@ a {
   background-image:
     linear-gradient(var(--grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-size: 56px 56px;
 }
 
 .atmosphere {
   background:
-    radial-gradient(ellipse 75% 45% at 72% 0%, rgba(10, 125, 88, 0.12), transparent 55%),
-    radial-gradient(ellipse 45% 35% at 5% 90%, rgba(23, 106, 154, 0.06), transparent 50%),
+    radial-gradient(ellipse 90% 55% at 85% -5%, rgba(6, 122, 82, 0.14), transparent 52%),
+    radial-gradient(ellipse 50% 40% at -5% 70%, rgba(15, 106, 156, 0.07), transparent 48%),
+    radial-gradient(ellipse 40% 30% at 50% 100%, rgba(6, 122, 82, 0.05), transparent 50%),
     var(--ink);
+}
+
+.surface-lift {
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--line);
+}
+
+.btn-primary {
+  background: var(--signal);
+  color: var(--on-signal);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, var(--shadow-sm);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-primary:hover {
+  background: var(--signal-bright);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-ghost {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-ghost:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+  box-shadow: var(--shadow-md);
 }
 
 @keyframes fade-up {

@@ -2,7 +2,7 @@ import { problems } from "@/lib/problems";
 
 export function ProblemsSection() {
   return (
-    <section id="problems" className="border-t border-line bg-ink">
+    <section id="problems" className="border-t border-line bg-panel">
       <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 sm:py-28">
         <div className="max-w-2xl">
           <p className="text-[0.7rem] uppercase tracking-[0.18em] text-signal">
@@ -24,7 +24,7 @@ export function ProblemsSection() {
               id={p.id}
               className="grid gap-6 py-10 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_12rem] lg:gap-10"
             >
-              <span className="font-display text-3xl font-bold text-signal/55">
+              <span className="font-display text-3xl font-bold text-signal/40">
                 {p.number}
               </span>
               <div>
@@ -35,10 +35,11 @@ export function ProblemsSection() {
                   {p.problem}
                 </p>
                 <p className="mt-2 max-w-xl text-xs text-muted">
-                  <span className="text-signal">When:</span> {p.when}
+                  <span className="font-medium text-signal">When:</span> {p.when}
                 </p>
                 <p className="mt-4 max-w-xl text-sm leading-relaxed text-text">
-                  <span className="text-signal">How:</span> {p.solution}
+                  <span className="font-medium text-signal">How:</span>{" "}
+                  {p.solution}
                 </p>
               </div>
               <div className="flex items-start lg:justify-end">
@@ -55,16 +56,17 @@ export function ProblemsSection() {
 function StatusBadge({ code, label }: { code: string; label: string }) {
   const color =
     code === "402"
-      ? "text-warn border-warn/40"
+      ? "text-warn border-warn/25 bg-warn-dim"
       : code === "409"
-        ? "text-danger border-danger/40"
+        ? "text-danger border-danger/25 bg-danger-dim"
         : code === "400"
-          ? "text-info border-info/40"
-          : "text-signal border-signal/40";
+          ? "text-info border-info/25 bg-info-dim"
+          : "text-signal border-signal/25 bg-signal-dim";
 
   return (
     <div
       className={`inline-flex flex-col border px-4 py-3 font-mono text-xs uppercase tracking-[0.14em] ${color}`}
+      style={{ boxShadow: "var(--shadow-sm)" }}
     >
       <span className="text-lg font-semibold tracking-normal normal-case">
         {code}

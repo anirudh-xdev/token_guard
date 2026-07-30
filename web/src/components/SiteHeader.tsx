@@ -12,7 +12,7 @@ export function SiteHeader() {
   const liveDocs = demoUrl("/docs");
 
   return (
-    <header className="absolute inset-x-0 top-0 z-30 border-b border-line/60 bg-[var(--header-bg)] backdrop-blur-md">
+    <header className="absolute inset-x-0 top-0 z-30 border-b border-line/70 bg-[var(--header-bg)] backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:h-16 sm:px-8">
         <Link
           href="/"
@@ -50,7 +50,7 @@ export function SiteHeader() {
           ) : null}
           <a
             href={siteConfig.githubUrl}
-            className="border border-line px-3 py-1.5 text-text transition-colors hover:border-signal hover:text-signal"
+            className="btn-ghost px-3 py-1.5 text-text"
             rel="noopener noreferrer"
             target="_blank"
           >
