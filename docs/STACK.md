@@ -1,5 +1,7 @@
 # Stack
 
+Inventory of languages, libraries, and services. For **why** each piece exists, see [WHY_THIS_STACK.md](../WHY_THIS_STACK.md).
+
 ## Language and runtime
 
 | Piece | Detail |
@@ -56,6 +58,12 @@ go test ./test/... -count=1
 
 Fixtures live in `testdata/` (chat, pricing, mgmt, OpenRouter sync mocks). Override OpenRouter sync URL in tests via `TOKENGUARD_OPENROUTER_MODELS_URL`.
 
+## Marketing frontend (separate deploy)
+
+| Piece | Detail |
+|-------|--------|
+| `web/` | Next.js + React + Tailwind showcase site — not part of the proxy binary |
+
 ## What is not in the stack (yet)
 
-No CI workflows, package.json, or Kubernetes manifests in this repo.
+No CI workflows or Kubernetes manifests in this repo.

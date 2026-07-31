@@ -19,5 +19,6 @@ Map of project documentation. Start here if you are new to the repo.
 |------|---------|
 | [../README.md](../README.md) | Quick start and overview |
 | [../HOW_TO_USE.md](../HOW_TO_USE.md) | Step-by-step setup, providers, budgets, dashboard |
+| [../WHY_THIS_STACK.md](../WHY_THIS_STACK.md) | Short “why Go / Turso / Upstash / …” rationale |
 | [../AGENTS.md](../AGENTS.md) | Guidance for coding agents working in this repo |
 | [../.env.example](../.env.example) | Environment variable template |

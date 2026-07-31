@@ -53,6 +53,7 @@ Product marketing lives in [`web/`](web/) (Next.js) — separate from the embedd
 | Doc | Description |
 |-----|-------------|
 | [HOW_TO_USE.md](HOW_TO_USE.md) | Full setup, providers, budgets, dashboard |
+| [WHY_THIS_STACK.md](WHY_THIS_STACK.md) | Why Go, Turso, Upstash, and the rest |
 | [docs/INDEX.md](docs/INDEX.md) | Docs map |
 | [docs/PRODUCT.md](docs/PRODUCT.md) | What it is for and who uses it |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Request flow and packages |
