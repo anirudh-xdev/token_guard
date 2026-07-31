@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function HowItWorksPage() {
   return (
     <div className="pt-14 sm:pt-16">
-      <div className="border-b border-line site-grid">
+      <div className="border-b border-line bg-panel/60 site-grid">
         <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
           <p className="text-[0.7rem] uppercase tracking-[0.18em] text-signal">
             Request lifecycle

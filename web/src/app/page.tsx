@@ -6,7 +6,6 @@ import Link from "next/link";
 export default function HomePage() {
   return (
     <>
-      {/* Full-bleed hero: header overlays; content fills first viewport */}
       <section className="relative flex min-h-[100svh] flex-col pt-14 sm:pt-16">
         <div className="grid flex-1 lg:grid-cols-2">
           <div className="flex flex-col justify-center px-5 py-12 sm:px-8 sm:py-16 lg:py-20">
@@ -50,41 +49,40 @@ export default function HomePage() {
             <div className="mt-8 flex flex-wrap gap-4 text-[0.7rem] uppercase tracking-[0.12em]">
               <Link
                 href="/how-it-works"
-                className="border border-signal bg-signal/10 px-4 py-2 text-signal transition hover:bg-signal hover:text-ink"
+                className="btn-primary px-4 py-2"
               >
                 How it works
               </Link>
               <Link
                 href="/architecture"
-                className="border border-line px-4 py-2 text-muted transition hover:border-signal hover:text-signal"
+                className="btn-ghost px-4 py-2 text-muted"
               >
                 Architecture
               </Link>
             </div>
           </div>
-          <ul className="space-y-5 text-sm text-text-dim">
-            <li className="border-l-2 border-signal pl-4">
-              <span className="text-text">Micro-USD integers</span> — no float
-              ledger math.
-            </li>
-            <li className="border-l-2 border-signal pl-4">
-              <span className="text-text">Strip X-TokenGuard-*</span> before
-              upstream; provider auth passes through.
-            </li>
-            <li className="border-l-2 border-signal pl-4">
-              <span className="text-text">Never invent prices</span> — unknown
-              models get 400, not a guess.
-            </li>
-            <li className="border-l-2 border-signal pl-4">
-              <span className="text-text">503 when stores are down</span> in
-              guarded mode — never soft-fail open.
-            </li>
+          <ul className="space-y-4 text-sm text-text-dim">
+            {[
+              ["Micro-USD integers", "no float ledger math."],
+              ["Strip X-TokenGuard-*", "before upstream; provider auth passes through."],
+              ["Never invent prices", "unknown models get 400, not a guess."],
+              ["503 when stores are down", "in guarded mode — never soft-fail open."],
+            ].map(([title, rest]) => (
+              <li
+                key={title}
+                className="border-l-[3px] border-signal bg-panel py-3 pl-4 pr-3"
+                style={{ boxShadow: "var(--shadow-sm)" }}
+              >
+                <span className="font-medium text-text">{title}</span> — {rest}
+              </li>
+            ))}
           </ul>
         </div>
       </section>
 
-      <section className="border-t border-line">
-        <div className="mx-auto max-w-6xl px-5 py-20 text-center sm:px-8 sm:py-24">
+      <section className="relative overflow-hidden border-t border-line">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-signal-dim/80 via-transparent to-transparent" />
+        <div className="relative mx-auto max-w-6xl px-5 py-20 text-center sm:px-8 sm:py-24">
           <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
             Put a firewall in front of your tokens.
           </h2>
