@@ -1,15 +1,13 @@
 /** Browser → Go TokenGuard API base (no trailing slash). */
 export function apiBaseUrl(): string {
   const raw = process.env.NEXT_PUBLIC_TOKENGUARD_API_URL?.trim();
-  if (!raw) {
-    if (process.env.NODE_ENV === "development") {
-      return "http://127.0.0.1:8080";
-    }
-    throw new Error(
-      "NEXT_PUBLIC_TOKENGUARD_API_URL is required (Go API origin, e.g. https://api.example.com)",
-    );
+  if (raw) {
+    return raw.replace(/\/+$/, "");
   }
-  return raw.replace(/\/+$/, "");
+  // Never throw: static prerender / CI builds run with NODE_ENV=production and
+  // may not have this env at build time. Set NEXT_PUBLIC_TOKENGUARD_API_URL in
+  // the host (Vercel/etc.) for real deploys.
+  return "http://127.0.0.1:8080";
 }
 
 export type AccountView = {
