@@ -122,14 +122,35 @@ func main() {
 	mux.HandleFunc("/v1/tokenguard.json", handler.HandleDevInfo)
 	if config.PortalEnabled {
 		mux.HandleFunc("/portal", handler.HandlePortalPage)
-		mux.HandleFunc("/portal/login/github", handler.HandlePortalGitHubLogin)
-		mux.HandleFunc("/portal/callback/github", handler.HandlePortalGitHubCallback)
-		mux.HandleFunc("/portal/dev/login", handler.HandlePortalDevLogin)
-		mux.HandleFunc("/portal/logout", handler.HandlePortalLogout)
-		mux.HandleFunc("/portal/api/me", handler.HandlePortalMe)
-		mux.HandleFunc("/portal/api/keys", handler.HandlePortalCreateKey)
-		mux.HandleFunc("/portal/api/keys/revoke", handler.HandlePortalRevokeKey)
-		log.Print("product portal enabled at /portal")
+		mux.HandleFunc("/portal/dev/login", handler.WithPortalCORS(handler.HandlePortalDevLogin))
+		mux.HandleFunc("/portal/logout", handler.WithPortalCORS(handler.HandlePortalLogout))
+		mux.HandleFunc("/portal/api/me", handler.WithPortalCORS(handler.HandlePortalMe))
+		mux.HandleFunc("/portal/api/keys", handler.WithPortalCORS(handler.HandlePortalCreateKey))
+		mux.HandleFunc("/portal/api/keys/revoke", handler.WithPortalCORS(handler.HandlePortalRevokeKey))
+		mux.HandleFunc("/portal/api/teams", handler.WithPortalCORS(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				handler.HandlePortalListTeams(w, r)
+			case http.MethodPost:
+				handler.HandlePortalCreateTeam(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		}))
+		mux.HandleFunc("/portal/api/teams/budget", handler.WithPortalCORS(handler.HandlePortalUpdateTeamBudget))
+		mux.HandleFunc("/portal/api/teams/members", handler.WithPortalCORS(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				handler.HandlePortalListTeamMembers(w, r)
+			case http.MethodPost:
+				handler.HandlePortalAddTeamMember(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		}))
+		mux.HandleFunc("/portal/api/teams/members/cap", handler.WithPortalCORS(handler.HandlePortalUpdateMemberCap))
+		mux.HandleFunc("/portal/api/teams/members/remove", handler.WithPortalCORS(handler.HandlePortalRemoveTeamMember))
+		log.Print("product portal APIs enabled; UI prefers TOKENGUARD_PORTAL_APP_URL")
 	} else {
 		mux.HandleFunc("/portal", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

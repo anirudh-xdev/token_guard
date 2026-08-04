@@ -12,7 +12,7 @@ Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.
 
 | Audience | Path | Auth |
 |----------|------|------|
-| End users (hosted product) | `/portal` | GitHub OAuth (or `TOKENGUARD_PORTAL_DEV_LOGIN` locally) |
+| End users (hosted product) | Next.js `web/` `/portal` + Go `/portal/api/*` | Clerk (Next) → Bearer JWT to Go |
 | Operators | `/dashboard` + `/mgmt/*` | `TOKENGUARD_ADMIN_SECRET` |
 | Integrators | `/docs`, `/v1/tokenguard.json` | Public |
 

@@ -2,24 +2,18 @@ package proxy
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"tokenguard/internal/billing"
 )
 
-const (
-	sessionCookieName = "tokenguard_session"
-	oauthStateCookie  = "tokenguard_oauth_state"
-)
+const sessionCookieName = "tokenguard_session"
 
 type portalMeResponse struct {
 	User        billing.AccountView `json:"user"`
@@ -31,6 +25,10 @@ func (h *Handler) portalEnabled() bool {
 	return h != nil && h.portalEnabledFlag && h.accountStore != nil
 }
 
+func (h *Handler) clerkConfigured() bool {
+	return h != nil && strings.TrimSpace(h.clerkSecretKey) != "" && strings.TrimSpace(h.clerkPublishableKey) != ""
+}
+
 func (h *Handler) HandlePortalPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -40,107 +38,32 @@ func (h *Handler) HandlePortalPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if len(h.portalHTML) == 0 {
-		http.Error(w, "Portal UI unavailable", http.StatusServiceUnavailable)
+	// Prefer the Next.js product UI when configured.
+	if app := strings.TrimSpace(h.portalAppURL); app != "" {
+		http.Redirect(w, r, app, http.StatusFound)
 		return
+	}
+	if len(h.portalHTML) == 0 {
+		http.Error(w, "Portal UI unavailable — set TOKENGUARD_PORTAL_APP_URL to your Next.js /portal", http.StatusServiceUnavailable)
+		return
+	}
+	html := string(h.portalHTML)
+	html = strings.ReplaceAll(html, "__CLERK_PUBLISHABLE_KEY__", h.clerkPublishableKey)
+	html = strings.ReplaceAll(html, "__CLERK_FAPI__", clerkFrontendAPIHost(h.clerkPublishableKey))
+	if h.clerkConfigured() {
+		html = strings.ReplaceAll(html, "__CLERK_ENABLED__", "true")
+	} else {
+		html = strings.ReplaceAll(html, "__CLERK_ENABLED__", "false")
+	}
+	if h.portalDevLogin {
+		html = strings.ReplaceAll(html, "__DEV_LOGIN_ENABLED__", "true")
+	} else {
+		html = strings.ReplaceAll(html, "__DEV_LOGIN_ENABLED__", "false")
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(h.portalHTML)
-}
-
-func (h *Handler) HandlePortalGitHubLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !h.portalEnabled() {
-		http.NotFound(w, r)
-		return
-	}
-	if strings.TrimSpace(h.githubClientID) == "" || strings.TrimSpace(h.githubClientSecret) == "" {
-		writePortalJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"error": "GitHub OAuth is not configured",
-			"code":  "oauth_not_configured",
-		})
-		return
-	}
-
-	state, err := randomToken(16)
-	if err != nil {
-		writePortalJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to start login"})
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     oauthStateCookie,
-		Value:    state,
-		Path:     "/",
-		MaxAge:   600,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   h.portalSecureCookies,
-	})
-
-	q := url.Values{}
-	q.Set("client_id", h.githubClientID)
-	q.Set("redirect_uri", h.githubCallbackURL())
-	q.Set("scope", "read:user user:email")
-	q.Set("state", state)
-	http.Redirect(w, r, "https://github.com/login/oauth/authorize?"+q.Encode(), http.StatusFound)
-}
-
-func (h *Handler) HandlePortalGitHubCallback(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !h.portalEnabled() {
-		http.NotFound(w, r)
-		return
-	}
-
-	state := strings.TrimSpace(r.URL.Query().Get("state"))
-	code := strings.TrimSpace(r.URL.Query().Get("code"))
-	if state == "" || code == "" {
-		http.Redirect(w, r, "/portal?error=oauth_denied", http.StatusFound)
-		return
-	}
-	cookie, err := r.Cookie(oauthStateCookie)
-	if err != nil || cookie.Value == "" || cookie.Value != state {
-		http.Redirect(w, r, "/portal?error=oauth_state", http.StatusFound)
-		return
-	}
-	// Clear state cookie
-	http.SetCookie(w, &http.Cookie{Name: oauthStateCookie, Value: "", Path: "/", MaxAge: -1})
-
-	ghUser, err := exchangeGitHubCode(r.Context(), h.githubClientID, h.githubClientSecret, code, h.githubCallbackURL())
-	if err != nil {
-		log.Printf("portal github oauth: %v", err)
-		http.Redirect(w, r, "/portal?error=oauth_failed", http.StatusFound)
-		return
-	}
-
-	userID, _, err := h.accountStore.EnsureOAuthUser(
-		r.Context(),
-		"github",
-		ghUser.Subject,
-		ghUser.Email,
-		ghUser.Name,
-		h.portalDefaultBudgetMicroUSD,
-	)
-	if err != nil {
-		log.Printf("portal ensure user: %v", err)
-		http.Redirect(w, r, "/portal?error=account_failed", http.StatusFound)
-		return
-	}
-
-	if err := h.issueSession(w, r, userID); err != nil {
-		log.Printf("portal session: %v", err)
-		http.Redirect(w, r, "/portal?error=session_failed", http.StatusFound)
-		return
-	}
-	http.Redirect(w, r, "/portal", http.StatusFound)
+	_, _ = w.Write([]byte(html))
 }
 
 func (h *Handler) HandlePortalDevLogin(w http.ResponseWriter, r *http.Request) {
@@ -172,18 +95,13 @@ func (h *Handler) HandlePortalDevLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, _, err := h.accountStore.EnsureOAuthUser(
-		r.Context(),
-		"dev",
-		email,
-		email,
-		name,
-		h.portalDefaultBudgetMicroUSD,
+		r.Context(), "dev", email, email, name, h.portalDefaultBudgetMicroUSD,
 	)
 	if err != nil {
 		writePortalJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create account"})
 		return
 	}
-	if err := h.issueSession(w, r, userID); err != nil {
+	if err := h.issueSession(w, userID); err != nil {
 		writePortalJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create session"})
 		return
 	}
@@ -215,11 +133,11 @@ func (h *Handler) HandlePortalMe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	sess, ok := h.requirePortalSession(w, r)
+	userID, ok := h.requirePortalUser(w, r)
 	if !ok {
 		return
 	}
-	view, err := h.accountStore.GetAccountView(r.Context(), sess.UserID)
+	view, err := h.accountStore.GetAccountView(r.Context(), userID)
 	if err != nil {
 		writePortalJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load account"})
 		return
@@ -234,9 +152,9 @@ func (h *Handler) HandlePortalMe(w http.ResponseWriter, r *http.Request) {
 			"api_key_header": "X-TokenGuard-API-Key",
 		},
 		Limits: map[string]any{
-			"max_keys":              h.portalMaxKeys,
-			"default_budget_usd":    float64(h.portalDefaultBudgetMicroUSD) / 1_000_000,
-			"can_create_key":        view.ActiveKeyCount < h.portalMaxKeys,
+			"max_keys":           h.portalMaxKeys,
+			"default_budget_usd": float64(h.portalDefaultBudgetMicroUSD) / 1_000_000,
+			"can_create_key":     view.ActiveKeyCount < h.portalMaxKeys,
 		},
 	})
 }
@@ -246,12 +164,12 @@ func (h *Handler) HandlePortalCreateKey(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	sess, ok := h.requirePortalSession(w, r)
+	userID, ok := h.requirePortalUser(w, r)
 	if !ok {
 		return
 	}
 
-	count, err := h.accountStore.CountActiveAPIKeys(r.Context(), sess.UserID)
+	count, err := h.accountStore.CountActiveAPIKeys(r.Context(), userID)
 	if err != nil {
 		writePortalJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to check keys"})
 		return
@@ -273,7 +191,7 @@ func (h *Handler) HandlePortalCreateKey(w http.ResponseWriter, r *http.Request) 
 		name = "default"
 	}
 
-	keyID, plaintext, err := h.accountStore.CreateAPIKey(r.Context(), sess.UserID, name)
+	keyID, plaintext, err := h.accountStore.CreateAPIKey(r.Context(), userID, name)
 	if err != nil {
 		writePortalJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create API key"})
 		return
@@ -291,7 +209,7 @@ func (h *Handler) HandlePortalRevokeKey(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	sess, ok := h.requirePortalSession(w, r)
+	userID, ok := h.requirePortalUser(w, r)
 	if !ok {
 		return
 	}
@@ -302,25 +220,53 @@ func (h *Handler) HandlePortalRevokeKey(w http.ResponseWriter, r *http.Request) 
 		writePortalJSON(w, http.StatusBadRequest, map[string]string{"error": "key_id is required"})
 		return
 	}
-	if err := h.accountStore.RevokeAPIKey(r.Context(), sess.UserID, req.KeyID); err != nil {
+	if err := h.accountStore.RevokeAPIKey(r.Context(), userID, req.KeyID); err != nil {
 		writePortalJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
 	writePortalJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *Handler) requirePortalSession(w http.ResponseWriter, r *http.Request) (billing.AuthSession, bool) {
+func (h *Handler) requirePortalUser(w http.ResponseWriter, r *http.Request) (string, bool) {
 	if !h.portalEnabled() {
 		http.NotFound(w, r)
-		return billing.AuthSession{}, false
+		return "", false
 	}
+
+	// Preferred: Clerk Bearer JWT
+	if auth := strings.TrimSpace(r.Header.Get("Authorization")); auth != "" && h.clerkConfigured() {
+		identity, err := h.verifyClerkBearer(r.Context(), auth)
+		if err != nil {
+			writePortalJSON(w, http.StatusUnauthorized, map[string]string{
+				"error": "Invalid Clerk session",
+				"code":  "unauthorized",
+			})
+			return "", false
+		}
+		userID, _, err := h.accountStore.EnsureOAuthUser(
+			r.Context(),
+			"clerk",
+			identity.Subject,
+			identity.Email,
+			identity.Name,
+			h.portalDefaultBudgetMicroUSD,
+		)
+		if err != nil {
+			log.Printf("portal clerk ensure user: %v", err)
+			writePortalJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to resolve account"})
+			return "", false
+		}
+		return userID, true
+	}
+
+	// Dev/local cookie session
 	token := h.sessionToken(r)
 	if token == "" {
 		writePortalJSON(w, http.StatusUnauthorized, map[string]string{
 			"error": "Not signed in",
 			"code":  "unauthorized",
 		})
-		return billing.AuthSession{}, false
+		return "", false
 	}
 	sess, err := h.accountStore.LookupAuthSession(r.Context(), token)
 	if err != nil {
@@ -330,16 +276,16 @@ func (h *Handler) requirePortalSession(w http.ResponseWriter, r *http.Request) (
 				"error": "Session expired or invalid",
 				"code":  "unauthorized",
 			})
-			return billing.AuthSession{}, false
+			return "", false
 		}
 		writePortalJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Session store unavailable"})
-		return billing.AuthSession{}, false
+		return "", false
 	}
-	return sess, true
+	return sess.UserID, true
 }
 
-func (h *Handler) issueSession(w http.ResponseWriter, r *http.Request, userID string) error {
-	token, err := h.accountStore.CreateAuthSession(r.Context(), userID, h.portalSessionTTL)
+func (h *Handler) issueSession(w http.ResponseWriter, userID string) error {
+	token, err := h.accountStore.CreateAuthSession(context.Background(), userID, h.portalSessionTTL)
 	if err != nil {
 		return err
 	}
@@ -353,6 +299,61 @@ func (h *Handler) issueSession(w http.ResponseWriter, r *http.Request, userID st
 		Secure:   h.portalSecureCookies,
 	})
 	return nil
+}
+
+func writePortalJSON(w http.ResponseWriter, status int, payload any) {
+	setPortalCORSHeaders(w, "")
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (h *Handler) setPortalCORS(w http.ResponseWriter, r *http.Request) {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	setPortalCORSHeaders(w, origin)
+	if len(h.portalCORSOrigins) > 0 {
+		for _, allowed := range h.portalCORSOrigins {
+			if origin == allowed {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				return
+			}
+		}
+		return
+	}
+	// Dev-friendly default when origins unset: echo request origin if present.
+	if origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	}
+}
+
+func setPortalCORSHeaders(w http.ResponseWriter, _ string) {
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
+
+func (h *Handler) HandlePortalOptions(w http.ResponseWriter, r *http.Request) {
+	if !h.portalEnabled() {
+		http.NotFound(w, r)
+		return
+	}
+	h.setPortalCORS(w, r)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) WithPortalCORS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			h.HandlePortalOptions(w, r)
+			return
+		}
+		h.setPortalCORS(w, r)
+		next(w, r)
+	}
 }
 
 func (h *Handler) sessionToken(r *http.Request) string {
@@ -375,11 +376,6 @@ func (h *Handler) clearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-func (h *Handler) githubCallbackURL() string {
-	base := strings.TrimRight(strings.TrimSpace(h.portalBaseURL), "/")
-	return base + "/portal/callback/github"
-}
-
 func (h *Handler) publicBaseURL(r *http.Request) string {
 	if base := strings.TrimRight(strings.TrimSpace(h.portalBaseURL), "/"); base != "" {
 		return base
@@ -391,144 +387,6 @@ func (h *Handler) publicBaseURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func writePortalJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func randomToken(nBytes int) (string, error) {
-	raw := make([]byte, nBytes)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(raw), nil
-}
-
-type githubUserInfo struct {
-	Subject string
-	Email   string
-	Name    string
-}
-
-func exchangeGitHubCode(ctx context.Context, clientID, clientSecret, code, redirectURI string) (githubUserInfo, error) {
-	form := url.Values{}
-	form.Set("client_id", clientID)
-	form.Set("client_secret", clientSecret)
-	form.Set("code", code)
-	form.Set("redirect_uri", redirectURI)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://github.com/login/oauth/access_token", strings.NewReader(form.Encode()))
-	if err != nil {
-		return githubUserInfo{}, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return githubUserInfo{}, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode >= 300 {
-		return githubUserInfo{}, fmt.Errorf("github token exchange status %d", resp.StatusCode)
-	}
-	var tokenResp struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return githubUserInfo{}, err
-	}
-	if tokenResp.AccessToken == "" {
-		return githubUserInfo{}, fmt.Errorf("github token exchange: %s", tokenResp.Error)
-	}
-
-	userReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
-	if err != nil {
-		return githubUserInfo{}, err
-	}
-	userReq.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
-	userReq.Header.Set("Accept", "application/vnd.github+json")
-	userReq.Header.Set("User-Agent", "TokenGuard")
-
-	userResp, err := http.DefaultClient.Do(userReq)
-	if err != nil {
-		return githubUserInfo{}, err
-	}
-	defer userResp.Body.Close()
-	userBody, _ := io.ReadAll(io.LimitReader(userResp.Body, 1<<20))
-	if userResp.StatusCode >= 300 {
-		return githubUserInfo{}, fmt.Errorf("github user status %d", userResp.StatusCode)
-	}
-	var user struct {
-		ID    int64  `json:"id"`
-		Login string `json:"login"`
-		Name  string `json:"name"`
-		Email string `json:"email"`
-	}
-	if err := json.Unmarshal(userBody, &user); err != nil {
-		return githubUserInfo{}, err
-	}
-	if user.ID == 0 {
-		return githubUserInfo{}, errors.New("github user missing id")
-	}
-
-	email := strings.TrimSpace(user.Email)
-	if email == "" {
-		email, _ = fetchGitHubPrimaryEmail(ctx, tokenResp.AccessToken)
-	}
-	if email == "" {
-		email = fmt.Sprintf("%d+%s@users.noreply.github.com", user.ID, user.Login)
-	}
-	name := strings.TrimSpace(user.Name)
-	if name == "" {
-		name = user.Login
-	}
-	return githubUserInfo{
-		Subject: fmt.Sprintf("%d", user.ID),
-		Email:   email,
-		Name:    name,
-	}, nil
-}
-
-func fetchGitHubPrimaryEmail(ctx context.Context, accessToken string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user/emails", nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "TokenGuard")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("github emails status %d", resp.StatusCode)
-	}
-	var emails []struct {
-		Email    string `json:"email"`
-		Primary  bool   `json:"primary"`
-		Verified bool   `json:"verified"`
-	}
-	if err := json.Unmarshal(body, &emails); err != nil {
-		return "", err
-	}
-	for _, e := range emails {
-		if e.Primary && e.Verified && e.Email != "" {
-			return e.Email, nil
-		}
-	}
-	for _, e := range emails {
-		if e.Verified && e.Email != "" {
-			return e.Email, nil
-		}
-	}
-	return "", errors.New("no verified github email")
+func usdToMicro(usd float64) int64 {
+	return int64(math.Round(usd * 1_000_000))
 }

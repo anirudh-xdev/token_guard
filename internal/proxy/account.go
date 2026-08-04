@@ -7,8 +7,7 @@ import (
 	"tokenguard/internal/billing"
 )
 
-// AccountStore backs the product portal (sign-in, sessions, my keys).
-// Separate from BudgetStore so guard fakes stay unchanged.
+// AccountStore backs the product portal (sign-in, sessions, my keys, teams).
 type AccountStore interface {
 	EnsureOAuthUser(ctx context.Context, provider, subject, email, name string, defaultLimitMicroUSD int64) (userID string, created bool, err error)
 	CreateAuthSession(ctx context.Context, userID string, ttl time.Duration) (plaintext string, err error)
@@ -18,7 +17,14 @@ type AccountStore interface {
 	CreateAPIKey(ctx context.Context, userID, name string) (string, string, error)
 	CountActiveAPIKeys(ctx context.Context, userID string) (int, error)
 	RevokeAPIKey(ctx context.Context, userID, keyID string) error
+	CreateTeam(ctx context.Context, ownerUserID, name string, limitMicroUSD int64) (billing.Team, error)
+	ListTeamsForUser(ctx context.Context, userID string) ([]billing.Team, error)
+	GetTeamForUser(ctx context.Context, teamID, userID string) (billing.Team, error)
+	UpdateTeamBudget(ctx context.Context, ownerUserID, teamID string, limitMicroUSD int64) (billing.Team, error)
+	AddTeamMemberByEmail(ctx context.Context, ownerUserID, teamID, email string, capMicroUSD int64) (billing.TeamMember, error)
+	UpdateTeamMemberCap(ctx context.Context, ownerUserID, teamID, memberUserID string, capMicroUSD int64) (billing.TeamMember, error)
+	RemoveTeamMember(ctx context.Context, ownerUserID, teamID, memberUserID string) error
+	ListTeamMembers(ctx context.Context, requesterUserID, teamID string) ([]billing.TeamMember, error)
 }
 
-// Compile-time check: real Turso store implements AccountStore.
 var _ AccountStore = (*billing.Store)(nil)

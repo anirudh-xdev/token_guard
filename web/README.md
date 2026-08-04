@@ -1,47 +1,64 @@
-# TokenGuard showcase site
+# TokenGuard web (Next.js)
 
-Marketing / portfolio site for [TokenGuard](https://github.com/anirudh-xdev/token_guard). Separate from the Go-embedded operator dashboard (`internal/ui`).
+Marketing site **and** product portal UI. The Go binary remains the API / proxy.
 
-## Stack
-
-Next.js (App Router) · Tailwind CSS v4 · deployed independently (e.g. Vercel)
+```text
+Browser  →  Next.js (web/)     Clerk sign-in, portal UI
+              │
+              └─ Bearer JWT  →  Go TokenGuard (:8080)
+                                  /portal/api/*, /v1/*, /mgmt/*
+```
 
 ## Develop
 
+Terminal 1 — API:
+
+```powershell
+# repo root
+go run ./cmd/tokenguard
+```
+
+Terminal 2 — frontend:
+
 ```powershell
 cd web
-copy .env.example .env.local
+copy .env.example .env.local   # fill Clerk + API URL
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000/portal](http://localhost:3000/portal).
 
-## Env
+## Env (`web/.env.local`)
 
 | Variable | Purpose |
 |----------|---------|
-| `NEXT_PUBLIC_GITHUB_URL` | Repo link (default: anirudh-xdev/token_guard) |
-| `NEXT_PUBLIC_DEMO_URL` | Optional live proxy base — enables Live demo / `/healthz` CTAs |
+| `NEXT_PUBLIC_TOKENGUARD_API_URL` | Go API base (`http://127.0.0.1:8080`) |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
+| `CLERK_SECRET_KEY` | Clerk secret key |
+| `NEXT_PUBLIC_DEMO_URL` | Optional marketing live CTAs |
+| `NEXT_PUBLIC_GITHUB_URL` | Repo link |
 
 Never put `TOKENGUARD_ADMIN_SECRET` or `tg_` keys in this app.
 
-## Deploy (Vercel)
+## Go env (paired)
 
-1. Import the monorepo; set **Root Directory** to `web`.
-2. Framework preset: Next.js.
-3. Set the env vars above.
-4. Deploy. Leave the Go proxy on Render (or elsewhere) unchanged.
-
-```powershell
-npm run build
+```env
+TOKENGUARD_PORTAL_ENABLED=true
+TOKENGUARD_PORTAL_APP_URL=http://localhost:3000/portal
+TOKENGUARD_PORTAL_CORS_ORIGINS=http://localhost:3000
+TOKENGUARD_CLERK_SECRET_KEY=sk_...
+TOKENGUARD_CLERK_PUBLISHABLE_KEY=pk_...
 ```
+
+In Clerk Dashboard, allow `http://localhost:3000`.
 
 ## Routes
 
 | Path | Role |
 |------|------|
-| `/` | Brand hero + problem → solution narrative |
-| `/how-it-works` | Guarded request lifecycle |
-| `/architecture` | Stores + packages |
-| `/docs` | Links into real repo docs |
+| `/` | Marketing |
+| `/how-it-works` | Lifecycle |
+| `/architecture` | Architecture |
+| `/docs` | Docs links |
+| `/portal` | **Product UI** (Clerk + keys + teams) |

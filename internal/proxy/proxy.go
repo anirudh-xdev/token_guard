@@ -41,8 +41,10 @@ type Handler struct {
 	portalMaxKeys              int
 	portalSessionTTL           time.Duration
 	portalSecureCookies        bool
-	githubClientID             string
-	githubClientSecret         string
+	portalAppURL               string
+	portalCORSOrigins          []string
+	clerkPublishableKey        string
+	clerkSecretKey             string
 }
 
 type HandlerOption func(*handlerOptions)
@@ -122,6 +124,8 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 		options.tokenEncoder = encoder
 	}
 
+	initClerk(cfg.ClerkSecretKey)
+
 	reverseProxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			route := providerFromContext(pr.In.Context())
@@ -181,8 +185,10 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 		portalMaxKeys:               maxKeys,
 		portalSessionTTL:            sessionTTL,
 		portalSecureCookies:         cfg.PortalSecureCookies,
-		githubClientID:              cfg.GitHubClientID,
-		githubClientSecret:          cfg.GitHubClientSecret,
+		portalAppURL:                cfg.PortalAppURL,
+		portalCORSOrigins:           cfg.PortalCORSOrigins,
+		clerkPublishableKey:         cfg.ClerkPublishableKey,
+		clerkSecretKey:              cfg.ClerkSecretKey,
 	}, nil
 }
 

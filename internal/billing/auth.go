@@ -33,18 +33,19 @@ type APIKeyMeta struct {
 
 // AccountView is the signed-in user's portal snapshot.
 type AccountView struct {
-	UserID             string       `json:"user_id"`
-	Email              string       `json:"email"`
-	Name               string       `json:"name"`
-	LimitMicroUSD      int64        `json:"limit_microusd"`
-	SpentMicroUSD      int64        `json:"spent_microusd"`
-	ReservedMicroUSD   int64        `json:"reserved_microusd"`
-	AvailableMicroUSD  int64        `json:"available_microusd"`
-	BudgetUSD          float64      `json:"budget_usd"`
-	SpentUSD           float64      `json:"spent_usd"`
-	AvailableUSD       float64      `json:"available_usd"`
-	Keys               []APIKeyMeta `json:"keys"`
-	ActiveKeyCount     int          `json:"active_key_count"`
+	UserID            string       `json:"user_id"`
+	Email             string       `json:"email"`
+	Name              string       `json:"name"`
+	LimitMicroUSD     int64        `json:"limit_microusd"`
+	SpentMicroUSD     int64        `json:"spent_microusd"`
+	ReservedMicroUSD  int64        `json:"reserved_microusd"`
+	AvailableMicroUSD int64        `json:"available_microusd"`
+	BudgetUSD         float64      `json:"budget_usd"`
+	SpentUSD          float64      `json:"spent_usd"`
+	AvailableUSD      float64      `json:"available_usd"`
+	Keys              []APIKeyMeta `json:"keys"`
+	ActiveKeyCount    int          `json:"active_key_count"`
+	Teams             []Team       `json:"teams"`
 }
 
 // EnsureOAuthUser finds or creates a user for an OAuth identity.
@@ -260,6 +261,14 @@ WHERE u.id = ? AND u.status = 'active'`, userID).Scan(
 			view.ActiveKeyCount++
 		}
 	}
+	teams, err := s.ListTeamsForUser(ctx, userID)
+	if err != nil {
+		return AccountView{}, err
+	}
+	if teams == nil {
+		teams = []Team{}
+	}
+	view.Teams = teams
 	return view, nil
 }
 

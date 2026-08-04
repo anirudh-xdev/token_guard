@@ -139,8 +139,8 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		PortalMaxKeys:               5,
 		PortalSessionTTL:            24 * time.Hour,
 		PortalSecureCookies:         false,
-		GitHubClientID:              "e2e-github-client",
-		GitHubClientSecret:          "e2e-github-secret",
+		ClerkPublishableKey:         "pk_test_e2e",
+		ClerkSecretKey:              "sk_test_e2e",
 		DefaultMaxOutputTokens:      4096,
 		MaxRequestBytes:             opts.maxRequestBytes,
 		AdminSecret:                 adminSecret,
@@ -176,13 +176,34 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 	mux.HandleFunc("/v1/tokenguard.json", handler.HandleDevInfo)
 	if opts.portalEnabled {
 		mux.HandleFunc("/portal", handler.HandlePortalPage)
-		mux.HandleFunc("/portal/login/github", handler.HandlePortalGitHubLogin)
-		mux.HandleFunc("/portal/callback/github", handler.HandlePortalGitHubCallback)
 		mux.HandleFunc("/portal/dev/login", handler.HandlePortalDevLogin)
 		mux.HandleFunc("/portal/logout", handler.HandlePortalLogout)
 		mux.HandleFunc("/portal/api/me", handler.HandlePortalMe)
 		mux.HandleFunc("/portal/api/keys", handler.HandlePortalCreateKey)
 		mux.HandleFunc("/portal/api/keys/revoke", handler.HandlePortalRevokeKey)
+		mux.HandleFunc("/portal/api/teams", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				handler.HandlePortalListTeams(w, r)
+			case http.MethodPost:
+				handler.HandlePortalCreateTeam(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})
+		mux.HandleFunc("/portal/api/teams/budget", handler.HandlePortalUpdateTeamBudget)
+		mux.HandleFunc("/portal/api/teams/members", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				handler.HandlePortalListTeamMembers(w, r)
+			case http.MethodPost:
+				handler.HandlePortalAddTeamMember(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})
+		mux.HandleFunc("/portal/api/teams/members/cap", handler.HandlePortalUpdateMemberCap)
+		mux.HandleFunc("/portal/api/teams/members/remove", handler.HandlePortalRemoveTeamMember)
 	}
 	if opts.mgmtEnabled {
 		mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
@@ -374,9 +395,21 @@ type memoryStore struct {
 	events     chan billing.UsageEvent
 	oauth      map[string]memOAuth
 	sessions   map[string]memSession
+	teams      map[string]memTeam
+	members    map[string]memTeamMember // teamID|userID
 	failLookup bool
 	failBudget bool
 	seq        int
+}
+
+type memTeam struct {
+	id, name, owner string
+	limit, spent, reserved int64
+}
+
+type memTeamMember struct {
+	teamID, userID, role, status string
+	cap, spent, reserved         int64
 }
 
 func newMemoryStore(events chan billing.UsageEvent) *memoryStore {
@@ -752,6 +785,7 @@ func (s *memoryStore) GetAccountView(ctx context.Context, userID string) (billin
 		BudgetUSD:         float64(b.LimitMicroUSD) / 1_000_000,
 		SpentUSD:          float64(b.SpentMicroUSD) / 1_000_000,
 		AvailableUSD:      float64(available) / 1_000_000,
+		Teams:             []billing.Team{},
 	}
 	for _, k := range s.keyMeta {
 		if k.userID != userID {
@@ -764,7 +798,193 @@ func (s *memoryStore) GetAccountView(ctx context.Context, userID string) (billin
 			view.ActiveKeyCount++
 		}
 	}
+	for _, t := range s.teamsForUserLocked(userID) {
+		view.Teams = append(view.Teams, t)
+	}
 	return view, nil
+}
+
+func (s *memoryStore) CreateTeam(ctx context.Context, ownerUserID, name string, limitMicroUSD int64) (billing.Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.teams == nil {
+		s.teams = map[string]memTeam{}
+		s.members = map[string]memTeamMember{}
+	}
+	if limitMicroUSD <= 0 {
+		limitMicroUSD = 1_000_000
+	}
+	id := s.nextID("team")
+	s.teams[id] = memTeam{id: id, name: name, owner: ownerUserID, limit: limitMicroUSD}
+	s.members[id+"|"+ownerUserID] = memTeamMember{teamID: id, userID: ownerUserID, role: "owner", status: "active", cap: limitMicroUSD}
+	return billing.Team{
+		ID: id, Name: name, OwnerUserID: ownerUserID,
+		LimitMicroUSD: limitMicroUSD, BudgetUSD: float64(limitMicroUSD) / 1e6,
+		AvailableMicroUSD: limitMicroUSD, AvailableUSD: float64(limitMicroUSD) / 1e6,
+		MyRole: "owner", MyCapMicroUSD: limitMicroUSD, MyCapUSD: float64(limitMicroUSD) / 1e6,
+	}, nil
+}
+
+func (s *memoryStore) ListTeamsForUser(ctx context.Context, userID string) ([]billing.Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.teamsForUserLocked(userID), nil
+}
+
+func (s *memoryStore) teamsForUserLocked(userID string) []billing.Team {
+	out := []billing.Team{}
+	for _, m := range s.members {
+		if m.userID != userID || m.status != "active" {
+			continue
+		}
+		t := s.teams[m.teamID]
+		avail := t.limit - t.spent - t.reserved
+		if avail < 0 {
+			avail = 0
+		}
+		out = append(out, billing.Team{
+			ID: t.id, Name: t.name, OwnerUserID: t.owner,
+			LimitMicroUSD: t.limit, SpentMicroUSD: t.spent, ReservedMicroUSD: t.reserved,
+			AvailableMicroUSD: avail,
+			BudgetUSD: float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+			MyRole: m.role, MyCapMicroUSD: m.cap, MySpentMicroUSD: m.spent,
+			MyCapUSD: float64(m.cap) / 1e6, MySpentUSD: float64(m.spent) / 1e6,
+		})
+	}
+	return out
+}
+
+func (s *memoryStore) GetTeamForUser(ctx context.Context, teamID, userID string) (billing.Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.teamsForUserLocked(userID) {
+		if t.ID == teamID {
+			return t, nil
+		}
+	}
+	return billing.Team{}, billing.ErrTeamNotFound
+}
+
+func (s *memoryStore) UpdateTeamBudget(ctx context.Context, ownerUserID, teamID string, limitMicroUSD int64) (billing.Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok || t.owner != ownerUserID {
+		return billing.Team{}, billing.ErrNotTeamOwner
+	}
+	t.limit = limitMicroUSD
+	s.teams[teamID] = t
+	m := s.members[teamID+"|"+ownerUserID]
+	m.cap = limitMicroUSD
+	s.members[teamID+"|"+ownerUserID] = m
+	avail := t.limit - t.spent - t.reserved
+	if avail < 0 {
+		avail = 0
+	}
+	return billing.Team{
+		ID: t.id, Name: t.name, OwnerUserID: t.owner,
+		LimitMicroUSD: t.limit, SpentMicroUSD: t.spent, ReservedMicroUSD: t.reserved,
+		AvailableMicroUSD: avail,
+		BudgetUSD: float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+		MyRole: "owner", MyCapMicroUSD: m.cap, MyCapUSD: float64(m.cap) / 1e6,
+	}, nil
+}
+
+func (s *memoryStore) AddTeamMemberByEmail(ctx context.Context, ownerUserID, teamID, email string, capMicroUSD int64) (billing.TeamMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok || t.owner != ownerUserID {
+		return billing.TeamMember{}, billing.ErrNotTeamOwner
+	}
+	var memberID, name string
+	for id, u := range s.users {
+		if strings.EqualFold(u.Email, email) {
+			memberID, name = id, u.Name
+			break
+		}
+	}
+	if memberID == "" {
+		return billing.TeamMember{}, fmt.Errorf("no TokenGuard account for email %s", email)
+	}
+	key := teamID + "|" + memberID
+	if m, ok := s.members[key]; ok && m.status == "active" {
+		return billing.TeamMember{}, billing.ErrTeamMemberExists
+	}
+	s.members[key] = memTeamMember{teamID: teamID, userID: memberID, role: "member", status: "active", cap: capMicroUSD}
+	return billing.TeamMember{
+		UserID: memberID, Email: email, Name: name, Role: "member",
+		CapMicroUSD: capMicroUSD, CapUSD: float64(capMicroUSD) / 1e6,
+		AvailableMicroUSD: capMicroUSD, AvailableUSD: float64(capMicroUSD) / 1e6,
+	}, nil
+}
+
+func (s *memoryStore) UpdateTeamMemberCap(ctx context.Context, ownerUserID, teamID, memberUserID string, capMicroUSD int64) (billing.TeamMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok || t.owner != ownerUserID {
+		return billing.TeamMember{}, billing.ErrNotTeamOwner
+	}
+	key := teamID + "|" + memberUserID
+	m, ok := s.members[key]
+	if !ok || m.status != "active" {
+		return billing.TeamMember{}, billing.ErrTeamMemberNotFound
+	}
+	m.cap = capMicroUSD
+	s.members[key] = m
+	u := s.users[memberUserID]
+	return billing.TeamMember{
+		UserID: memberUserID, Email: u.Email, Name: u.Name, Role: m.role,
+		CapMicroUSD: capMicroUSD, CapUSD: float64(capMicroUSD) / 1e6,
+		SpentMicroUSD: m.spent, SpentUSD: float64(m.spent) / 1e6,
+	}, nil
+}
+
+func (s *memoryStore) RemoveTeamMember(ctx context.Context, ownerUserID, teamID, memberUserID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok || t.owner != ownerUserID {
+		return billing.ErrNotTeamOwner
+	}
+	if memberUserID == ownerUserID {
+		return fmt.Errorf("cannot remove team owner")
+	}
+	key := teamID + "|" + memberUserID
+	m, ok := s.members[key]
+	if !ok {
+		return billing.ErrTeamMemberNotFound
+	}
+	m.status = "removed"
+	s.members[key] = m
+	return nil
+}
+
+func (s *memoryStore) ListTeamMembers(ctx context.Context, requesterUserID, teamID string) ([]billing.TeamMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m, ok := s.members[teamID+"|"+requesterUserID]; !ok || m.status != "active" {
+		return nil, billing.ErrTeamNotFound
+	}
+	var out []billing.TeamMember
+	for _, m := range s.members {
+		if m.teamID != teamID || m.status != "active" {
+			continue
+		}
+		u := s.users[m.userID]
+		avail := m.cap - m.spent - m.reserved
+		if avail < 0 {
+			avail = 0
+		}
+		out = append(out, billing.TeamMember{
+			UserID: m.userID, Email: u.Email, Name: u.Name, Role: m.role,
+			CapMicroUSD: m.cap, SpentMicroUSD: m.spent, ReservedMicroUSD: m.reserved,
+			AvailableMicroUSD: avail,
+			CapUSD: float64(m.cap) / 1e6, SpentUSD: float64(m.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+		})
+	}
+	return out, nil
 }
 
 func (s *memoryStore) CountActiveAPIKeys(ctx context.Context, userID string) (int, error) {

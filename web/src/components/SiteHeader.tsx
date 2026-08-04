@@ -56,6 +56,12 @@ export function SiteHeader() {
           >
             GitHub
           </a>
+          <Link
+            href="/portal"
+            className="rounded-md bg-signal px-3 py-1.5 font-semibold text-on-signal"
+          >
+            Portal
+          </Link>
         </div>
       </div>
     </header>

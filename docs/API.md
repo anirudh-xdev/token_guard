@@ -10,14 +10,17 @@ HTTP surface of TokenGuard. Full integrator walkthrough: [HOW_TO_USE.md](../HOW_
 | `GET` | `/docs` | None | Public integration guide |
 | `GET` | `/v1/tokenguard.json` | None | Discovery (providers, bases, priced models) |
 | `GET` | `/dashboard` | None (UI); mgmt secret in UI | Served only if `TOKENGUARD_MGMT_ENABLED=true` |
-| `GET` | `/portal` | Session cookie after sign-in | Product portal (requires `TOKENGUARD_PORTAL_ENABLED`) |
-| `GET` | `/portal/login/github` | None | Start GitHub OAuth |
-| `GET` | `/portal/callback/github` | OAuth | Complete GitHub OAuth; sets session cookie |
+| `GET` | `/portal` | Session / Clerk | Product portal (requires `TOKENGUARD_PORTAL_ENABLED`) |
 | `POST` | `/portal/dev/login` | None (dev only) | Local/test login when `TOKENGUARD_PORTAL_DEV_LOGIN=true` |
-| `POST` / `GET` | `/portal/logout` | Session | Revoke session |
-| `GET` | `/portal/api/me` | Session cookie | Account, budget, key prefixes, integration snippet |
-| `POST` | `/portal/api/keys` | Session cookie | Create `tg_` key (plaintext once) |
-| `POST` | `/portal/api/keys/revoke` | Session cookie | Revoke own key by `key_id` |
+| `POST` / `GET` | `/portal/logout` | Session | Revoke local session cookie |
+| `GET` | `/portal/api/me` | Clerk Bearer or session | Account, budget, keys, teams |
+| `POST` | `/portal/api/keys` | Clerk Bearer or session | Create `tg_` key (plaintext once) |
+| `POST` | `/portal/api/keys/revoke` | Clerk Bearer or session | Revoke own key by `key_id` |
+| `GET` / `POST` | `/portal/api/teams` | Clerk Bearer or session | List / create teams |
+| `POST` | `/portal/api/teams/budget` | Owner | Set team pool USD |
+| `GET` / `POST` | `/portal/api/teams/members` | Member / owner | List members (`?team_id=`) / invite by email + `cap_usd` |
+| `POST` | `/portal/api/teams/members/cap` | Owner | Update member cap |
+| `POST` | `/portal/api/teams/members/remove` | Owner | Remove member |
 | `POST` | `/mgmt/provision` | `X-TokenGuard-Admin-Secret` | Create user + `tg_` API key; optional `budget_usd` / `limit_microusd` |
 | `PATCH` / `POST` | `/mgmt/budget` | `X-TokenGuard-Admin-Secret` | Set/extend user budget; optional `reset_spent` |
 | `GET` | `/mgmt/users` | `X-TokenGuard-Admin-Secret` | List users and budgets |
@@ -84,16 +87,19 @@ X-TokenGuard-Admin-Secret: your-admin-secret
 
 Default budget when omitted: **$1.00** (`1_000_000` micro-USD).
 
-## Product portal (Phase 1)
+## Product portal (Phase 1 + Phase 2)
 
 Self-serve path for hosted TokenGuard (users never configure Turso/Upstash):
 
 1. Open `/portal`
-2. Sign in with GitHub (or dev login in local/test)
+2. Sign in with **Clerk** (or `TOKENGUARD_PORTAL_DEV_LOGIN` locally)
 3. Create an API key
 4. Point SDK `baseURL` at `{host}/v1` and send `X-TokenGuard-API-Key`
+5. Optional: create a **team** with a pool budget and invite members with per-person caps
 
 Default personal budget when a portal account is created: **`TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD`** (default **$5**).
+
+Portal APIs authenticate with `Authorization: Bearer <Clerk session JWT>` (or a dev session cookie).
 
 Operator `/dashboard` + admin secret remain for support, pricing, and budget overrides.
 

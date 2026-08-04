@@ -66,10 +66,10 @@ Design choices behind TokenGuard. Prefer these invariants when changing code.
 
 **How:** One `internal/ui/dashboard.html` file embedded into the binary via `go:embed`. CORS headers are set only on `/mgmt/*` responses (not on proxy/guard JSON errors).
 
-## Product portal (Phase 1)
+## Product portal (Phase 1 + Phase 2)
 
-**Why:** Hosted users must not configure Turso/Upstash/admin secret. They sign in, get a personal budget + `tg_` key, and integrate.
+**Why:** Hosted users must not configure Turso/Upstash/admin secret. They sign in, get a personal budget + `tg_` key, and optionally join teams with caps.
 
-**How:** `/portal` with GitHub OAuth (or `TOKENGUARD_PORTAL_DEV_LOGIN` for local/tests). Sessions stored hashed in Turso (`auth_sessions`). Operator `/dashboard` stays separate. Default personal budget from `TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD` (default $5).
+**How:** `/portal` with **Clerk** session JWTs (`Authorization: Bearer …`). Dev cookie login remains for local tests. Teams store a pool + per-member caps; `ReserveBudget` enforces both when the user is on a team.
 
-**Not yet:** Teams / per-member caps (Phase 2).
+**Not yet:** Multi-team spend selection header, billing/Stripe for TokenGuard itself.

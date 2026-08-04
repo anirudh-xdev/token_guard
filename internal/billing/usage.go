@@ -61,6 +61,63 @@ func (s *Store) ReserveBudget(ctx context.Context, userID string, amountMicroUSD
 	}
 	defer tx.Rollback()
 
+	scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, userID)
+	if err != nil {
+		return Budget{}, false, err
+	}
+
+	if onTeam {
+		memberAvail := scope.MemberCap - scope.MemberSpent - scope.MemberReserved
+		teamAvail := scope.TeamLimit - scope.TeamSpent - scope.TeamReserved
+		if memberAvail < amountMicroUSD || teamAvail < amountMicroUSD {
+			budget, err := scanBudget(ctx, tx, userID)
+			if err != nil && !errors.Is(err, ErrBudgetNotFound) {
+				return Budget{}, false, err
+			}
+			// Surface remaining as the tighter of personal view / member remaining for 402 UX.
+			if budget.UserID == "" {
+				budget.UserID = userID
+			}
+			budget.LimitMicroUSD = scope.MemberCap
+			budget.SpentMicroUSD = scope.MemberSpent
+			budget.ReservedMicroUSD = scope.MemberReserved
+			if err := tx.Commit(); err != nil {
+				return Budget{}, false, err
+			}
+			return budget, false, nil
+		}
+		if _, err := tx.ExecContext(ctx, `
+UPDATE team_members
+SET reserved_microusd = reserved_microusd + ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE team_id = ? AND user_id = ?`, amountMicroUSD, scope.TeamID, userID); err != nil {
+			return Budget{}, false, fmt.Errorf("reserve member cap: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+UPDATE teams
+SET reserved_microusd = reserved_microusd + ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?`, amountMicroUSD, scope.TeamID); err != nil {
+			return Budget{}, false, fmt.Errorf("reserve team pool: %w", err)
+		}
+		// Keep personal budget row in sync for dashboards that still show user_budgets.
+		_, _ = tx.ExecContext(ctx, `
+UPDATE user_budgets
+SET reserved_microusd = reserved_microusd + ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE user_id = ?
+  AND (limit_microusd - spent_microusd - reserved_microusd) >= ?`, amountMicroUSD, userID, amountMicroUSD)
+
+		budget, err := scanBudget(ctx, tx, userID)
+		if err != nil {
+			return Budget{}, false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return Budget{}, false, fmt.Errorf("commit reservation tx: %w", err)
+		}
+		return budget, true, nil
+	}
+
 	result, err := tx.ExecContext(ctx, `
 UPDATE user_budgets
 SET reserved_microusd = reserved_microusd + ?,
@@ -194,15 +251,43 @@ func (s *Store) ReleaseReservation(ctx context.Context, userID string, reservedM
 	if reservedMicroUSD <= 0 {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `
+	userID = strings.TrimSpace(userID)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
 UPDATE user_budgets
 SET reserved_microusd = MAX(0, reserved_microusd - ?),
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE user_id = ?`, reservedMicroUSD, strings.TrimSpace(userID))
-	if err != nil {
+WHERE user_id = ?`, reservedMicroUSD, userID); err != nil {
 		return fmt.Errorf("release reservation: %w", err)
 	}
-	return nil
+
+	scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	if onTeam {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE team_members
+SET reserved_microusd = MAX(0, reserved_microusd - ?),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE team_id = ? AND user_id = ?`, reservedMicroUSD, scope.TeamID, userID); err != nil {
+			return fmt.Errorf("release member reservation: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+UPDATE teams
+SET reserved_microusd = MAX(0, reserved_microusd - ?),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?`, reservedMicroUSD, scope.TeamID); err != nil {
+			return fmt.Errorf("release team reservation: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) recordUsage(ctx context.Context, event UsageEvent, reservedMicroUSD int64, settleReservation bool) error {
@@ -269,6 +354,28 @@ SET spent_microusd = spent_microusd + ?,
 WHERE user_id = ?`, spend, reservedMicroUSD, event.UserID); err != nil {
 			return fmt.Errorf("settle reserved budget: %w", err)
 		}
+		scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, event.UserID)
+		if err != nil {
+			return err
+		}
+		if onTeam {
+			if _, err := tx.ExecContext(ctx, `
+UPDATE team_members
+SET spent_microusd = spent_microusd + ?,
+    reserved_microusd = MAX(0, reserved_microusd - ?),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE team_id = ? AND user_id = ?`, spend, reservedMicroUSD, scope.TeamID, event.UserID); err != nil {
+				return fmt.Errorf("settle member spend: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `
+UPDATE teams
+SET spent_microusd = spent_microusd + ?,
+    reserved_microusd = MAX(0, reserved_microusd - ?),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?`, spend, reservedMicroUSD, scope.TeamID); err != nil {
+				return fmt.Errorf("settle team spend: %w", err)
+			}
+		}
 	} else if event.Status == "completed" && event.ActualCostMicroUSD > 0 {
 		if _, err := tx.ExecContext(ctx, `
 UPDATE user_budgets
@@ -276,6 +383,26 @@ SET spent_microusd = spent_microusd + ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE user_id = ?`, event.ActualCostMicroUSD, event.UserID); err != nil {
 			return fmt.Errorf("update user budget spend: %w", err)
+		}
+		scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, event.UserID)
+		if err != nil {
+			return err
+		}
+		if onTeam {
+			if _, err := tx.ExecContext(ctx, `
+UPDATE team_members
+SET spent_microusd = spent_microusd + ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE team_id = ? AND user_id = ?`, event.ActualCostMicroUSD, scope.TeamID, event.UserID); err != nil {
+				return fmt.Errorf("update member spend: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `
+UPDATE teams
+SET spent_microusd = spent_microusd + ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?`, event.ActualCostMicroUSD, scope.TeamID); err != nil {
+				return fmt.Errorf("update team spend: %w", err)
+			}
 		}
 	}
 

@@ -31,8 +31,13 @@ const (
 	portalMaxKeysEnv           = "TOKENGUARD_PORTAL_MAX_KEYS"
 	portalSessionTTLHoursEnv   = "TOKENGUARD_PORTAL_SESSION_TTL_HOURS"
 	portalSecureCookiesEnv     = "TOKENGUARD_PORTAL_SECURE_COOKIES"
-	githubClientIDEnv          = "TOKENGUARD_GITHUB_CLIENT_ID"
-	githubClientSecretEnv      = "TOKENGUARD_GITHUB_CLIENT_SECRET"
+	portalAppURLEnv            = "TOKENGUARD_PORTAL_APP_URL"
+	portalCORSOriginsEnv       = "TOKENGUARD_PORTAL_CORS_ORIGINS"
+	clerkPublishableKeyEnv     = "TOKENGUARD_CLERK_PUBLISHABLE_KEY"
+	clerkSecretKeyEnv          = "TOKENGUARD_CLERK_SECRET_KEY"
+	// Also accept standard Clerk env names.
+	clerkPublishableKeyAltEnv  = "CLERK_PUBLISHABLE_KEY"
+	clerkSecretKeyAltEnv       = "CLERK_SECRET_KEY"
 	defaultMaxOutputTokensEnv  = "TOKENGUARD_DEFAULT_MAX_OUTPUT_TOKENS"
 	maxRequestBytesEnv         = "TOKENGUARD_MAX_REQUEST_BYTES"
 	readHeaderTimeoutMillisEnv = "TOKENGUARD_READ_HEADER_TIMEOUT_MS"
@@ -57,8 +62,10 @@ type Config struct {
 	PortalMaxKeys               int
 	PortalSessionTTL            time.Duration
 	PortalSecureCookies         bool
-	GitHubClientID              string
-	GitHubClientSecret          string
+	PortalAppURL                string
+	PortalCORSOrigins           []string
+	ClerkPublishableKey         string
+	ClerkSecretKey              string
 	DefaultMaxOutputTokens      int64
 	MaxRequestBytes             int64
 	ReadHeaderTimeout           time.Duration
@@ -128,6 +135,15 @@ func ConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 
+	clerkPublishable := strings.TrimSpace(os.Getenv(clerkPublishableKeyEnv))
+	if clerkPublishable == "" {
+		clerkPublishable = strings.TrimSpace(os.Getenv(clerkPublishableKeyAltEnv))
+	}
+	clerkSecret := strings.TrimSpace(os.Getenv(clerkSecretKeyEnv))
+	if clerkSecret == "" {
+		clerkSecret = strings.TrimSpace(os.Getenv(clerkSecretKeyAltEnv))
+	}
+
 	cfg := Config{
 		ListenAddr:                  listenAddrFromEnv(),
 		UpstreamURL:                 strings.TrimSpace(os.Getenv(upstreamURLEnv)),
@@ -143,8 +159,10 @@ func ConfigFromEnv() (Config, error) {
 		PortalMaxKeys:               maxKeys,
 		PortalSessionTTL:            time.Duration(sessionTTLHours) * time.Hour,
 		PortalSecureCookies:         portalSecureCookies,
-		GitHubClientID:              strings.TrimSpace(os.Getenv(githubClientIDEnv)),
-		GitHubClientSecret:          strings.TrimSpace(os.Getenv(githubClientSecretEnv)),
+		PortalAppURL:                strings.TrimSpace(os.Getenv(portalAppURLEnv)),
+		PortalCORSOrigins:           csvListFromEnv(portalCORSOriginsEnv),
+		ClerkPublishableKey:         clerkPublishable,
+		ClerkSecretKey:              clerkSecret,
 		DefaultMaxOutputTokens:      defaultMaxOutputTokens,
 		MaxRequestBytes:             maxRequestBytes,
 		ReadHeaderTimeout:           readHeaderTimeout,
@@ -261,9 +279,9 @@ func (c Config) Validate() error {
 		} else if _, err := parseUpstreamURL(c.PortalBaseURL); err != nil {
 			errs = append(errs, fmt.Errorf("TOKENGUARD_PORTAL_BASE_URL: %w", err))
 		}
-		githubReady := strings.TrimSpace(c.GitHubClientID) != "" && strings.TrimSpace(c.GitHubClientSecret) != ""
-		if !githubReady && !c.PortalDevLogin {
-			errs = append(errs, errors.New("portal requires GitHub OAuth credentials or TOKENGUARD_PORTAL_DEV_LOGIN=true"))
+		clerkReady := strings.TrimSpace(c.ClerkPublishableKey) != "" && strings.TrimSpace(c.ClerkSecretKey) != ""
+		if !clerkReady && !c.PortalDevLogin {
+			errs = append(errs, errors.New("portal requires Clerk keys (TOKENGUARD_CLERK_PUBLISHABLE_KEY + TOKENGUARD_CLERK_SECRET_KEY) or TOKENGUARD_PORTAL_DEV_LOGIN=true"))
 		}
 		if c.PortalDefaultBudgetMicroUSD < 0 {
 			errs = append(errs, errors.New("portal default budget cannot be negative"))
@@ -325,6 +343,22 @@ func intFromEnv(name string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be a positive integer", name)
 	}
 	return parsed, nil
+}
+
+func csvListFromEnv(name string) []string {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, strings.TrimRight(p, "/"))
+		}
+	}
+	return out
 }
 
 func floatFromEnv(name string, fallback float64) (float64, error) {

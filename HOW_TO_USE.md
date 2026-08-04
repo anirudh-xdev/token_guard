@@ -95,31 +95,39 @@ Public pages (no admin secret):
 
 ## Product portal (hosted users)
 
-If you run TokenGuard as a **hosted product**, end users should use `/portal` — not Turso, Upstash, or the admin secret.
+**Frontend (Next.js `web/`)** handles Clerk sign-in and the portal UI.  
+**Backend (Go)** handles `/portal/api/*`, budgets, keys, teams, and the LLM proxy.
 
-Enable on your instance:
+```powershell
+# Terminal 1 — API
+go run ./cmd/tokenguard
 
-```env
-TOKENGUARD_PORTAL_ENABLED=true
-TOKENGUARD_PORTAL_BASE_URL=https://your-host.example
-TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD=5
-TOKENGUARD_GITHUB_CLIENT_ID=...
-TOKENGUARD_GITHUB_CLIENT_SECRET=...
-# Local http only:
-# TOKENGUARD_PORTAL_SECURE_COOKIES=false
-# TOKENGUARD_PORTAL_DEV_LOGIN=true
+# Terminal 2 — UI
+cd web
+npm run dev
 ```
 
-GitHub OAuth callback URL: `{TOKENGUARD_PORTAL_BASE_URL}/portal/callback/github`
+Open `http://localhost:3000/portal`.
 
-User flow:
+```env
+# Go (.env)
+TOKENGUARD_PORTAL_ENABLED=true
+TOKENGUARD_PORTAL_APP_URL=http://localhost:3000/portal
+TOKENGUARD_PORTAL_CORS_ORIGINS=http://localhost:3000
+TOKENGUARD_CLERK_PUBLISHABLE_KEY=pk_...
+TOKENGUARD_CLERK_SECRET_KEY=sk_...
 
-1. Open `/portal` and sign in with GitHub  
-2. Create an API key (shown once)  
-3. Point the SDK at `{host}/v1` and send `X-TokenGuard-API-Key`  
-4. Keep using their own provider API key  
+# web/.env.local
+NEXT_PUBLIC_TOKENGUARD_API_URL=http://127.0.0.1:8080
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_SECRET_KEY=sk_...
+```
 
-Operator `/dashboard` remains for you (pricing, support, budget overrides).
+In Clerk, allow origin `http://localhost:3000`.
+
+User flow: sign in on Next → create key → call `{API}/v1` with `X-TokenGuard-API-Key`. Teams/caps are managed in the portal UI and enforced by the Go API.
+
+Operator `/dashboard` remains on the Go host.
 
 ## Real Guarded Mode
 

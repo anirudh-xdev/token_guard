@@ -91,6 +91,7 @@ func TestPortalMeUnauthorized(t *testing.T) {
 
 func TestPortalDevLoginDisabled(t *testing.T) {
 	h := newHarness(t, harnessOpts{guardEnabled: true, portalEnabled: true, portalDevLogin: false})
+	// Harness must supply Clerk placeholders when dev login is off.
 	status, _, _ := h.doJSON(http.MethodPost, "/portal/dev/login", map[string]string{
 		"email": "x@example.com",
 	}, nil)
