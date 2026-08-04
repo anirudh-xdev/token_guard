@@ -7,11 +7,11 @@ HTTP surface of TokenGuard. Full integrator walkthrough: [HOW_TO_USE.md](../HOW_
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
 | `GET` | `/healthz` | None | `{"status":"ok"}` |
-| `GET` | `/docs` | None | Public integration guide |
+| `GET` | `/docs` | — | Redirects to `TOKENGUARD_DOCS_APP_URL` (Next.js integrator guide) |
 | `GET` | `/v1/tokenguard.json` | None | Discovery (providers, bases, priced models) |
-| `GET` | `/dashboard` | None (UI); mgmt secret in UI | Served only if `TOKENGUARD_MGMT_ENABLED=true` |
-| `GET` | `/portal` | Session / Clerk | Product portal (requires `TOKENGUARD_PORTAL_ENABLED`) |
-| `POST` | `/portal/dev/login` | None (dev only) | Local/test login when `TOKENGUARD_PORTAL_DEV_LOGIN=true` |
+| `GET` | `/dashboard` | — | Redirects to `TOKENGUARD_DASHBOARD_APP_URL` when mgmt enabled |
+| `GET` | `/portal` | — | Redirects to `TOKENGUARD_PORTAL_APP_URL` (Next.js UI) |
+| `POST` | `/portal/dev/login` | None (dev only) | Local/test cookie login when `TOKENGUARD_PORTAL_DEV_LOGIN=true` |
 | `POST` / `GET` | `/portal/logout` | Session | Revoke local session cookie |
 | `GET` | `/portal/api/me` | Clerk Bearer or session | Account, budget, keys, teams |
 | `POST` | `/portal/api/keys` | Clerk Bearer or session | Create `tg_` key (plaintext once) |
@@ -91,15 +91,15 @@ Default budget when omitted: **$1.00** (`1_000_000` micro-USD).
 
 Self-serve path for hosted TokenGuard (users never configure Turso/Upstash):
 
-1. Open `/portal`
-2. Sign in with **Clerk** (or `TOKENGUARD_PORTAL_DEV_LOGIN` locally)
+1. Open Next.js `web/` at `/portal` (or hit Go `GET /portal` → redirects to `TOKENGUARD_PORTAL_APP_URL`)
+2. Sign in with **Clerk** (browser). Go verifies the session JWT on `/portal/api/*`
 3. Create an API key
-4. Point SDK `baseURL` at `{host}/v1` and send `X-TokenGuard-API-Key`
+4. Point SDK `baseURL` at `{api_host}/v1` and send `X-TokenGuard-API-Key`
 5. Optional: create a **team** with a pool budget and invite members with per-person caps
 
 Default personal budget when a portal account is created: **`TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD`** (default **$5**).
 
-Portal APIs authenticate with `Authorization: Bearer <Clerk session JWT>` (or a dev session cookie).
+Portal APIs authenticate with `Authorization: Bearer <Clerk session JWT>`. Cookie sessions are for `TOKENGUARD_PORTAL_DEV_LOGIN` / e2e harness only. CORS allowlist: `TOKENGUARD_PORTAL_CORS_ORIGINS`.
 
 Operator `/dashboard` + admin secret remain for support, pricing, and budget overrides.
 

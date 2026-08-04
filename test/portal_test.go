@@ -9,14 +9,25 @@ import (
 	"testing"
 )
 
-func TestPortalPageServed(t *testing.T) {
+func TestPortalPageRedirectsToApp(t *testing.T) {
 	h := newHarness(t, harnessOpts{guardEnabled: true, portalEnabled: true, portalDevLogin: true})
-	status, raw, _ := h.do(http.MethodGet, "/portal", nil, nil)
-	if status != http.StatusOK {
-		t.Fatalf("status=%d", status)
+	client := &http.Client{
+		Transport: h.server.Client().Transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
-	if !strings.Contains(string(raw), "Get your API key") {
-		t.Fatalf("portal html missing title")
+	resp, err := client.Get(h.url("/portal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status=%d want 302", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if loc != "http://localhost:3000/portal" {
+		t.Fatalf("Location=%q", loc)
 	}
 }
 

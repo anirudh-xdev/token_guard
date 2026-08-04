@@ -48,7 +48,7 @@ func (h *Handler) HandleDevInfo(w http.ResponseWriter, r *http.Request) {
 		"proxy_base_url_hint": "Use this host as your OpenAI-compatible base URL (usually .../v1).",
 		"openrouter_note":     "OpenRouter upstream base should be https://openrouter.ai/api (not .../api/v1).",
 		"required_headers": map[string]string{
-			"X-TokenGuard-API-Key":      "User key from /dashboard or POST /mgmt/provision (tg_...)",
+			"X-TokenGuard-API-Key":      "User key from portal, operator console, or POST /mgmt/provision (tg_...)",
 			"Authorization / x-api-key": "Your real provider API key (passed through)",
 			"X-TokenGuard-Provider":     "Optional. One of the providers list (e.g. openai, openrouter)",
 			"X-TokenGuard-Session-ID":   "Recommended for agents — enables loop detection",
@@ -74,7 +74,7 @@ func (h *Handler) HandleDevInfo(w http.ResponseWriter, r *http.Request) {
 		},
 		"quickstart": []string{
 			"1. Open /docs for the human guide",
-			"2. Unlock /dashboard with your admin secret",
+			"2. Open Next.js /dashboard (or follow GET /dashboard redirect) with your admin secret",
 			"3. Provision a user (set budget_usd) and copy the tg_ API key",
 			"4. Set your SDK baseURL to this host + /v1",
 			"5. Send provider auth + X-TokenGuard-API-Key on every request",

@@ -70,6 +70,6 @@ cmd/tokenguard/main.go
 
 ## Dashboard
 
-`internal/ui/dashboard.html` is a static admin UI embedded into the binary and served at `/dashboard` when management is enabled. It calls `/mgmt/users`, `/mgmt/usage`, `/mgmt/provision`, `/mgmt/budget`, and `/mgmt/pricing*` with `X-TokenGuard-Admin-Secret`.
+Next.js `web/` `/dashboard` is the operator console. Go `GET /dashboard` redirects to `TOKENGUARD_DASHBOARD_APP_URL`. The UI calls `/mgmt/users`, `/mgmt/usage`, `/mgmt/provision`, `/mgmt/budget`, and `/mgmt/pricing*` with `X-TokenGuard-Admin-Secret`.
 
 See [API.md](API.md) for routes and headers, and [STRUCTURE.md](STRUCTURE.md) for file ownership.

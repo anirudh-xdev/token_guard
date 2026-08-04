@@ -26,7 +26,7 @@ func (h *Handler) portalEnabled() bool {
 }
 
 func (h *Handler) clerkConfigured() bool {
-	return h != nil && strings.TrimSpace(h.clerkSecretKey) != "" && strings.TrimSpace(h.clerkPublishableKey) != ""
+	return h != nil && strings.TrimSpace(h.clerkSecretKey) != ""
 }
 
 func (h *Handler) HandlePortalPage(w http.ResponseWriter, r *http.Request) {
@@ -38,32 +38,15 @@ func (h *Handler) HandlePortalPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Prefer the Next.js product UI when configured.
-	if app := strings.TrimSpace(h.portalAppURL); app != "" {
-		http.Redirect(w, r, app, http.StatusFound)
+	app := strings.TrimSpace(h.portalAppURL)
+	if app == "" {
+		writePortalJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "Portal UI is the Next.js app. Set TOKENGUARD_PORTAL_APP_URL (e.g. http://localhost:3000/portal).",
+			"code":  "portal_ui_not_configured",
+		})
 		return
 	}
-	if len(h.portalHTML) == 0 {
-		http.Error(w, "Portal UI unavailable — set TOKENGUARD_PORTAL_APP_URL to your Next.js /portal", http.StatusServiceUnavailable)
-		return
-	}
-	html := string(h.portalHTML)
-	html = strings.ReplaceAll(html, "__CLERK_PUBLISHABLE_KEY__", h.clerkPublishableKey)
-	html = strings.ReplaceAll(html, "__CLERK_FAPI__", clerkFrontendAPIHost(h.clerkPublishableKey))
-	if h.clerkConfigured() {
-		html = strings.ReplaceAll(html, "__CLERK_ENABLED__", "true")
-	} else {
-		html = strings.ReplaceAll(html, "__CLERK_ENABLED__", "false")
-	}
-	if h.portalDevLogin {
-		html = strings.ReplaceAll(html, "__DEV_LOGIN_ENABLED__", "true")
-	} else {
-		html = strings.ReplaceAll(html, "__DEV_LOGIN_ENABLED__", "false")
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(html))
+	http.Redirect(w, r, app, http.StatusFound)
 }
 
 func (h *Handler) HandlePortalDevLogin(w http.ResponseWriter, r *http.Request) {
@@ -233,8 +216,15 @@ func (h *Handler) requirePortalUser(w http.ResponseWriter, r *http.Request) (str
 		return "", false
 	}
 
-	// Preferred: Clerk Bearer JWT
-	if auth := strings.TrimSpace(r.Header.Get("Authorization")); auth != "" && h.clerkConfigured() {
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if auth != "" {
+		if !h.clerkConfigured() {
+			writePortalJSON(w, http.StatusUnauthorized, map[string]string{
+				"error": "Clerk is not configured on the API (TOKENGUARD_CLERK_SECRET_KEY)",
+				"code":  "clerk_not_configured",
+			})
+			return "", false
+		}
 		identity, err := h.verifyClerkBearer(r.Context(), auth)
 		if err != nil {
 			writePortalJSON(w, http.StatusUnauthorized, map[string]string{
@@ -259,7 +249,7 @@ func (h *Handler) requirePortalUser(w http.ResponseWriter, r *http.Request) (str
 		return userID, true
 	}
 
-	// Dev/local cookie session
+	// Cookie sessions: harness / TOKENGUARD_PORTAL_DEV_LOGIN only.
 	token := h.sessionToken(r)
 	if token == "" {
 		writePortalJSON(w, http.StatusUnauthorized, map[string]string{
@@ -312,19 +302,19 @@ func writePortalJSON(w http.ResponseWriter, status int, payload any) {
 func (h *Handler) setPortalCORS(w http.ResponseWriter, r *http.Request) {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	setPortalCORSHeaders(w, origin)
-	if len(h.portalCORSOrigins) > 0 {
-		for _, allowed := range h.portalCORSOrigins {
-			if origin == allowed {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Vary", "Origin")
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				return
-			}
-		}
+	if origin == "" {
 		return
 	}
-	// Dev-friendly default when origins unset: echo request origin if present.
-	if origin != "" {
+	for _, allowed := range h.portalCORSOrigins {
+		if origin == allowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			return
+		}
+	}
+	// Harness / local cookie tests may omit CORS allowlist.
+	if h.portalDevLogin && len(h.portalCORSOrigins) == 0 {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")

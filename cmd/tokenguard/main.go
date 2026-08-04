@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"tokenguard/internal/cache"
 	"tokenguard/internal/models"
 	"tokenguard/internal/proxy"
-	"tokenguard/internal/ui"
 )
 
 func main() {
@@ -97,7 +97,7 @@ func main() {
 		pricingEngine = pricing
 		options = append(options, proxy.WithGuard(store, pricing, breaker))
 		if config.PortalEnabled {
-			options = append(options, proxy.WithPortal(store, ui.PortalHTML))
+			options = append(options, proxy.WithPortal(store))
 		}
 	} else {
 		log.Print("TokenGuard guard disabled; running reverse proxy without budget or loop checks")
@@ -115,9 +115,18 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(ui.DocsHTML)
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		app := strings.TrimSpace(config.DocsAppURL)
+		if app == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"Docs UI is the Next.js app. Set TOKENGUARD_DOCS_APP_URL (e.g. http://localhost:3000/docs).","code":"docs_ui_not_configured"}`))
+			return
+		}
+		http.Redirect(w, r, app, http.StatusFound)
 	})
 	mux.HandleFunc("/v1/tokenguard.json", handler.HandleDevInfo)
 	if config.PortalEnabled {
@@ -160,9 +169,18 @@ func main() {
 	}
 	if config.ManagementEnabled {
 		mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(ui.DashboardHTML)
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			app := strings.TrimSpace(config.DashboardAppURL)
+			if app == "" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"error":"Operator UI is the Next.js app. Set TOKENGUARD_DASHBOARD_APP_URL (e.g. http://localhost:3000/dashboard).","code":"dashboard_ui_not_configured"}`))
+				return
+			}
+			http.Redirect(w, r, app, http.StatusFound)
 		})
 		mux.HandleFunc("/mgmt/provision", handler.HandleProvision)
 		mux.HandleFunc("/mgmt/budget", handler.HandleUpdateBudget)
@@ -172,6 +190,7 @@ func main() {
 		mux.HandleFunc("/mgmt/pricing/upsert", handler.HandleUpsertPricing)
 		mux.HandleFunc("/mgmt/pricing/delete", handler.HandleDeletePricing)
 		mux.HandleFunc("/mgmt/pricing/sync/openrouter", handler.HandleSyncOpenRouterPricing)
+		log.Printf("management APIs enabled; dashboard UI -> %s", config.DashboardAppURL)
 	}
 	mux.Handle("/", handler)
 

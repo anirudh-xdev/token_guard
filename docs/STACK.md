@@ -33,7 +33,7 @@ From `go.mod`:
 
 | Piece | Detail |
 |-------|--------|
-| `internal/ui/dashboard.html` | Vanilla HTML/JS admin UI; embedded at build time via `go:embed` |
+| Frontend | Next.js `web/` — portal, dashboard, integrator docs (not in the Go binary) |
 
 ## Data and pricing
 
@@ -58,11 +58,11 @@ go test ./test/... -count=1
 
 Fixtures live in `testdata/` (chat, pricing, mgmt, OpenRouter sync mocks). Override OpenRouter sync URL in tests via `TOKENGUARD_OPENROUTER_MODELS_URL`.
 
-## Marketing frontend (separate deploy)
+## Product frontend (separate deploy)
 
 | Piece | Detail |
 |-------|--------|
-| `web/` | Next.js + React + Tailwind showcase site — not part of the proxy binary |
+| `web/` | Next.js product UI (`/portal`), operator console (`/dashboard`), marketing |
 
 ## What is not in the stack (yet)
 

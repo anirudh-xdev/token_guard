@@ -33,6 +33,8 @@ const (
 	portalSecureCookiesEnv     = "TOKENGUARD_PORTAL_SECURE_COOKIES"
 	portalAppURLEnv            = "TOKENGUARD_PORTAL_APP_URL"
 	portalCORSOriginsEnv       = "TOKENGUARD_PORTAL_CORS_ORIGINS"
+	dashboardAppURLEnv         = "TOKENGUARD_DASHBOARD_APP_URL"
+	docsAppURLEnv              = "TOKENGUARD_DOCS_APP_URL"
 	clerkPublishableKeyEnv     = "TOKENGUARD_CLERK_PUBLISHABLE_KEY"
 	clerkSecretKeyEnv          = "TOKENGUARD_CLERK_SECRET_KEY"
 	// Also accept standard Clerk env names.
@@ -64,6 +66,8 @@ type Config struct {
 	PortalSecureCookies         bool
 	PortalAppURL                string
 	PortalCORSOrigins           []string
+	DashboardAppURL             string
+	DocsAppURL                  string
 	ClerkPublishableKey         string
 	ClerkSecretKey              string
 	DefaultMaxOutputTokens      int64
@@ -161,6 +165,8 @@ func ConfigFromEnv() (Config, error) {
 		PortalSecureCookies:         portalSecureCookies,
 		PortalAppURL:                strings.TrimSpace(os.Getenv(portalAppURLEnv)),
 		PortalCORSOrigins:           csvListFromEnv(portalCORSOriginsEnv),
+		DashboardAppURL:             strings.TrimSpace(os.Getenv(dashboardAppURLEnv)),
+		DocsAppURL:                  strings.TrimSpace(os.Getenv(docsAppURLEnv)),
 		ClerkPublishableKey:         clerkPublishable,
 		ClerkSecretKey:              clerkSecret,
 		DefaultMaxOutputTokens:      defaultMaxOutputTokens,
@@ -214,7 +220,32 @@ func (c Config) withDefaults() Config {
 	if cfg.MaxRequestBytes == 0 {
 		cfg.MaxRequestBytes = defaultMaxRequestBytes
 	}
+	if cfg.DashboardAppURL == "" {
+		cfg.DashboardAppURL = deriveWebPathURL(cfg.PortalAppURL, "/dashboard")
+	}
+	if cfg.DocsAppURL == "" {
+		cfg.DocsAppURL = deriveWebPathURL(cfg.PortalAppURL, "/docs")
+	}
+	if cfg.DocsAppURL == "" {
+		cfg.DocsAppURL = deriveWebPathURL(cfg.DashboardAppURL, "/docs")
+	}
 	return cfg
+}
+
+// deriveWebPathURL builds {scheme}://{host}{path} from a sibling app URL (e.g. portal → dashboard).
+func deriveWebPathURL(sibling string, path string) string {
+	sibling = strings.TrimSpace(sibling)
+	if sibling == "" {
+		return ""
+	}
+	u, err := url.Parse(sibling)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	u.Path = path
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
 }
 
 // normalizeProviderBaseURL fixes known misconfigurations that cause doubled paths.
@@ -270,6 +301,13 @@ func (c Config) Validate() error {
 	if c.ManagementEnabled && len(strings.TrimSpace(c.AdminSecret)) < 16 {
 		errs = append(errs, errors.New("TOKENGUARD_ADMIN_SECRET must be at least 16 characters when management endpoints are enabled"))
 	}
+	if c.ManagementEnabled {
+		if dash := strings.TrimSpace(c.DashboardAppURL); dash == "" {
+			errs = append(errs, errors.New("TOKENGUARD_DASHBOARD_APP_URL is required when management is enabled (or set TOKENGUARD_PORTAL_APP_URL to derive it)"))
+		} else if _, err := parseUpstreamURL(dash); err != nil {
+			errs = append(errs, fmt.Errorf("TOKENGUARD_DASHBOARD_APP_URL: %w", err))
+		}
+	}
 	if c.PortalEnabled {
 		if !c.GuardEnabled {
 			errs = append(errs, errors.New("TOKENGUARD_PORTAL_ENABLED requires TOKENGUARD_GUARD_ENABLED=true"))
@@ -279,9 +317,17 @@ func (c Config) Validate() error {
 		} else if _, err := parseUpstreamURL(c.PortalBaseURL); err != nil {
 			errs = append(errs, fmt.Errorf("TOKENGUARD_PORTAL_BASE_URL: %w", err))
 		}
-		clerkReady := strings.TrimSpace(c.ClerkPublishableKey) != "" && strings.TrimSpace(c.ClerkSecretKey) != ""
-		if !clerkReady && !c.PortalDevLogin {
-			errs = append(errs, errors.New("portal requires Clerk keys (TOKENGUARD_CLERK_PUBLISHABLE_KEY + TOKENGUARD_CLERK_SECRET_KEY) or TOKENGUARD_PORTAL_DEV_LOGIN=true"))
+		if app := strings.TrimSpace(c.PortalAppURL); app == "" {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_APP_URL is required when portal is enabled (Next.js /portal)"))
+		} else if _, err := parseUpstreamURL(app); err != nil {
+			errs = append(errs, fmt.Errorf("TOKENGUARD_PORTAL_APP_URL: %w", err))
+		}
+		// JWT verification needs the Clerk secret. Publishable key lives in web/ only.
+		if strings.TrimSpace(c.ClerkSecretKey) == "" && !c.PortalDevLogin {
+			errs = append(errs, errors.New("portal requires TOKENGUARD_CLERK_SECRET_KEY (or TOKENGUARD_PORTAL_DEV_LOGIN=true for harness)"))
+		}
+		if len(c.PortalCORSOrigins) == 0 && !c.PortalDevLogin {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_CORS_ORIGINS is required when portal is enabled (e.g. http://localhost:3000)"))
 		}
 		if c.PortalDefaultBudgetMicroUSD < 0 {
 			errs = append(errs, errors.New("portal default budget cannot be negative"))

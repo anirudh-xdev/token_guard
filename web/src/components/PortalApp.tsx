@@ -3,11 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import {
-  apiBaseUrl,
-  tgFetch,
-  type MeResponse,
-} from "@/lib/tokenguard-api";
+import { apiBaseUrl, tgFetch, type MeResponse } from "@/lib/tokenguard-api";
 
 function money(n: number | undefined) {
   if (typeof n !== "number") return "—";
@@ -247,7 +243,10 @@ export function PortalApp() {
             ["Spent", money(u?.spent_usd)],
             ["Available", money(u?.available_usd)],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-line bg-ink px-3 py-3">
+            <div
+              key={label}
+              className="rounded-lg border border-line bg-ink px-3 py-3"
+            >
               <p className="text-[0.65rem] uppercase tracking-[0.12em] text-muted">
                 {label}
               </p>
@@ -281,7 +280,9 @@ export function PortalApp() {
                 className="flex items-center justify-between gap-3 py-3 text-sm"
               >
                 <span>
-                  <code className="font-mono text-text-dim">{k.key_prefix}…</code>{" "}
+                  <code className="font-mono text-text-dim">
+                    {k.key_prefix}…
+                  </code>{" "}
                   <span className="text-muted">
                     {k.name} · {k.status}
                   </span>
@@ -406,7 +407,8 @@ export function PortalApp() {
                 <li key={m.email} className="py-2 text-sm">
                   {m.email}{" "}
                   <span className="text-muted">
-                    {m.role} · cap {money(m.cap_usd)} · spent {money(m.spent_usd)}
+                    {m.role} · cap {money(m.cap_usd)} · spent{" "}
+                    {money(m.spent_usd)}
                   </span>
                 </li>
               ))}
@@ -426,7 +428,7 @@ export function PortalApp() {
           </code>
         </p>
         <pre className="mt-3 overflow-x-auto rounded-lg bg-[#071410] p-4 font-mono text-xs leading-relaxed text-[#e8f5f1]">
-{`curl -X POST ${integration?.proxy_url || `${apiBaseUrl()}/v1/chat/completions`} \\
+          {`curl -X POST ${integration?.proxy_url || `${apiBaseUrl()}/v1/chat/completions`} \\
   -H "Authorization: Bearer $OPENAI_API_KEY" \\
   -H "X-TokenGuard-API-Key: tg_your_key" \\
   -H "Content-Type: application/json" \\

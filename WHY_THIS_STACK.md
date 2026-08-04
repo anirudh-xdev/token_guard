@@ -44,17 +44,13 @@ Short rationale for each technology in TokenGuard. For the inventory (versions, 
 
 **Why `pricing.json` still exists:** Offline smoke tests, bootstrap before sync, rare sticky overrides — not the day-to-day catalog.
 
-## Admin UI: embedded HTML (`go:embed`)
+## Product UI: Next.js (`web/`)
 
-**Why vanilla HTML/JS in the binary:** Operators need provision / budget / pricing without a separate frontend build for the control plane. One file embeds into the Go binary and works on Render even when cwd ≠ repo root.
+**Why separate Next.js app:** Portal, operator console, integrator docs, and marketing share one frontend deploy. Go stays the financial firewall API (proxy, `/mgmt/*`, `/portal/api/*`) and only redirects `/docs`, `/dashboard`, `/portal` to the web app.
 
-## Public docs & discovery: same Go process
+## Public discovery: same Go process
 
-**Why `/docs` and `/v1/tokenguard.json` in-process:** Integrators get a how-to and machine-readable providers/models from the same host as the proxy — no extra service for the MVP.
-
-## Marketing site: Next.js (`web/`)
-
-**Why separate Next.js app:** Product marketing (landing, architecture explainer) wants a modern site and its own deploy. It is **not** the budget firewall; the proxy stays Go. Deploy `web/` independently of the TokenGuard binary.
+**Why `/v1/tokenguard.json` and `/healthz` in-process:** Integrators get machine-readable providers/models from the same host as the proxy — no extra service for the MVP. Human `/docs` redirects to Next.js.
 
 ## Deploy: Render (+ Docker)
 

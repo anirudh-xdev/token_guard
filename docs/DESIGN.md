@@ -60,16 +60,16 @@ Design choices behind TokenGuard. Prefer these invariants when changing code.
 
 **How:** Settlement and usage logging run asynchronously after the response path; failures are logged server-side.
 
-## Single static dashboard
+## Operator console (Next.js)
 
-**Why:** Early product needs a simple admin surface without a frontend build pipeline.
+**Why:** Ops UI should ship with the product frontend; Go stays API-only.
 
-**How:** One `internal/ui/dashboard.html` file embedded into the binary via `go:embed`. CORS headers are set only on `/mgmt/*` responses (not on proxy/guard JSON errors).
+**How:** All browser UIs live in Next.js `web/` (`/docs`, `/dashboard`, `/portal`). Go only redirects those paths and serves JSON APIs. CORS headers are set on `/mgmt/*` and `/portal/api/*` (not on proxy/guard JSON errors).
 
 ## Product portal (Phase 1 + Phase 2)
 
 **Why:** Hosted users must not configure Turso/Upstash/admin secret. They sign in, get a personal budget + `tg_` key, and optionally join teams with caps.
 
-**How:** `/portal` with **Clerk** session JWTs (`Authorization: Bearer …`). Dev cookie login remains for local tests. Teams store a pool + per-member caps; `ReserveBudget` enforces both when the user is on a team.
+**How:** Next.js `web/` owns the Clerk UI at `/portal`. Go owns `/portal/api/*` and verifies Clerk JWTs (`Authorization: Bearer …`). Cookie login (`TOKENGUARD_PORTAL_DEV_LOGIN`) is for the e2e harness only. Teams store a pool + per-member caps; `ReserveBudget` enforces both when the user is on a team.
 
 **Not yet:** Multi-team spend selection header, billing/Stripe for TokenGuard itself.

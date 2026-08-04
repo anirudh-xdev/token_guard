@@ -20,7 +20,6 @@ import (
 	"tokenguard/internal/cache"
 	"tokenguard/internal/models"
 	"tokenguard/internal/proxy"
-	"tokenguard/internal/ui"
 )
 
 const adminSecret = "tokenguard-e2e-admin-secret"
@@ -139,7 +138,10 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		PortalMaxKeys:               5,
 		PortalSessionTTL:            24 * time.Hour,
 		PortalSecureCookies:         false,
-		ClerkPublishableKey:         "pk_test_e2e",
+		PortalAppURL:                "http://localhost:3000/portal",
+		PortalCORSOrigins:           []string{"http://localhost:3000"},
+		DashboardAppURL:             "http://localhost:3000/dashboard",
+		DocsAppURL:                  "http://localhost:3000/docs",
 		ClerkSecretKey:              "sk_test_e2e",
 		DefaultMaxOutputTokens:      4096,
 		MaxRequestBytes:             opts.maxRequestBytes,
@@ -154,7 +156,7 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		if !opts.guardEnabled {
 			t.Fatal("portal tests require guardEnabled")
 		}
-		handlerOpts = append(handlerOpts, proxy.WithPortal(store, ui.PortalHTML))
+		handlerOpts = append(handlerOpts, proxy.WithPortal(store))
 	}
 
 	handler, err := proxy.NewHandler(cfg, handlerOpts...)
@@ -169,9 +171,7 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(ui.DocsHTML)
+		http.Redirect(w, r, cfg.DocsAppURL, http.StatusFound)
 	})
 	mux.HandleFunc("/v1/tokenguard.json", handler.HandleDevInfo)
 	if opts.portalEnabled {
@@ -207,9 +207,7 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 	}
 	if opts.mgmtEnabled {
 		mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(ui.DashboardHTML)
+			http.Redirect(w, r, cfg.DashboardAppURL, http.StatusFound)
 		})
 		mux.HandleFunc("/mgmt/provision", handler.HandleProvision)
 		mux.HandleFunc("/mgmt/budget", handler.HandleUpdateBudget)

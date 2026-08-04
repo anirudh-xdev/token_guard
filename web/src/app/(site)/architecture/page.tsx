@@ -117,8 +117,8 @@ export default function ArchitecturePage() {
             + OpenRouter sync
           </li>
           <li>
-            <code className="text-signal">internal/ui</code> — embedded operator
-            dashboard (not this site)
+            <code className="text-signal">web/</code> — product portal, operator
+            console, and integrator docs (Next.js)
           </li>
         </ul>
 

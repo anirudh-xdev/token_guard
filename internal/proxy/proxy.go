@@ -36,14 +36,12 @@ type Handler struct {
 	portalEnabledFlag          bool
 	portalDevLogin             bool
 	portalBaseURL              string
-	portalHTML                 []byte
 	portalDefaultBudgetMicroUSD int64
 	portalMaxKeys              int
 	portalSessionTTL           time.Duration
 	portalSecureCookies        bool
 	portalAppURL               string
 	portalCORSOrigins          []string
-	clerkPublishableKey        string
 	clerkSecretKey             string
 }
 
@@ -57,7 +55,6 @@ type handlerOptions struct {
 	circuitBreaker  LoopBreaker
 	asyncLogTimeout time.Duration
 	accountStore    AccountStore
-	portalHTML      []byte
 }
 
 func WithStreamTokenObserver(observer StreamTokenObserver) HandlerOption {
@@ -86,11 +83,10 @@ func WithAsyncLogTimeout(timeout time.Duration) HandlerOption {
 	}
 }
 
-// WithPortal wires product sign-in (AccountStore + embedded portal HTML).
-func WithPortal(store AccountStore, html []byte) HandlerOption {
+// WithPortal wires the product account store (Next.js UI calls /portal/api/*).
+func WithPortal(store AccountStore) HandlerOption {
 	return func(options *handlerOptions) {
 		options.accountStore = store
-		options.portalHTML = html
 	}
 }
 
@@ -180,14 +176,12 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 		portalEnabledFlag:           cfg.PortalEnabled,
 		portalDevLogin:              cfg.PortalDevLogin,
 		portalBaseURL:               cfg.PortalBaseURL,
-		portalHTML:                  options.portalHTML,
 		portalDefaultBudgetMicroUSD: defaultBudget,
 		portalMaxKeys:               maxKeys,
 		portalSessionTTL:            sessionTTL,
 		portalSecureCookies:         cfg.PortalSecureCookies,
 		portalAppURL:                cfg.PortalAppURL,
 		portalCORSOrigins:           cfg.PortalCORSOrigins,
-		clerkPublishableKey:         cfg.ClerkPublishableKey,
 		clerkSecretKey:              cfg.ClerkSecretKey,
 	}, nil
 }

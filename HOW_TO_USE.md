@@ -89,8 +89,9 @@ Public pages (no admin secret):
 | URL | Purpose |
 |-----|---------|
 | `/healthz` | Liveness |
-| `/docs` | Human integration guide |
-| `/portal` | Product sign-in + personal API keys (when portal enabled) |
+| `/docs` | Redirects to Next.js integrator guide (`TOKENGUARD_DOCS_APP_URL`) |
+| `/portal` | Redirects to Next.js product UI (`TOKENGUARD_PORTAL_APP_URL`) |
+| `/dashboard` | Redirects to Next.js operator console (`TOKENGUARD_DASHBOARD_APP_URL`) |
 | `/v1/tokenguard.json` | Machine discovery (providers, bases, priced models — no secrets) |
 
 ## Product portal (hosted users)
@@ -127,7 +128,7 @@ In Clerk, allow origin `http://localhost:3000`.
 
 User flow: sign in on Next → create key → call `{API}/v1` with `X-TokenGuard-API-Key`. Teams/caps are managed in the portal UI and enforced by the Go API.
 
-Operator `/dashboard` remains on the Go host.
+Operator console: Next.js `http://localhost:3000/dashboard` (Go `/dashboard` redirects there).
 
 ## Real Guarded Mode
 
@@ -491,15 +492,13 @@ Invoke-RestMethod `
 
 ## Dashboard
 
-With management enabled, open:
+With `TOKENGUARD_MGMT_ENABLED=true`, open the Next.js console:
 
 ```text
-http://127.0.0.1:8080/dashboard
+http://localhost:3000/dashboard
 ```
 
-(On Render: `https://YOUR_SERVICE.onrender.com/dashboard`.)
-
-The dashboard is embedded in the TokenGuard binary (`internal/ui/dashboard.html`), so it works even when the process is not started from the repo root.
+Go `http://127.0.0.1:8080/dashboard` redirects to `TOKENGUARD_DASHBOARD_APP_URL`.
 
 Unlock with `TOKENGUARD_ADMIN_SECRET`. From the console you can:
 

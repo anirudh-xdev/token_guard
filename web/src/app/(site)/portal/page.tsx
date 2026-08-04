@@ -1,6 +1,6 @@
 "use client";
 
-import { ClerkProvider, SignInButton, useAuth, UserButton } from "@clerk/nextjs";
+import { SignInButton, useAuth, UserButton } from "@clerk/nextjs";
 import { PortalApp } from "@/components/PortalApp";
 
 function PortalGate() {
@@ -51,10 +51,8 @@ function PortalGate() {
 
 export default function PortalPage() {
   return (
-    <ClerkProvider>
-      <div className="relative min-h-[70vh] pt-20">
-        <PortalGate />
-      </div>
-    </ClerkProvider>
+    <div className="relative min-h-[70vh] pt-20">
+      <PortalGate />
+    </div>
   );
 }
