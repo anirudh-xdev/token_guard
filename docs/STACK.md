@@ -6,7 +6,7 @@ Inventory of languages, libraries, and services. For **why** each piece exists, 
 
 | Piece | Detail |
 |-------|--------|
-| Language | Go **1.21** (`go.mod`) |
+| Language | Go **1.24** (`go.mod` / Dockerfile) |
 | Module | `tokenguard` |
 | HTTP | Standard library `net/http`, `httputil.ReverseProxy` |
 | Config | Env vars + optional `.env` via `github.com/joho/godotenv` |

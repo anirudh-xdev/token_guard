@@ -77,7 +77,7 @@ Product marketing lives in [`web/`](web/) (Next.js) — separate from the embedd
 
 ## Stack (short)
 
-Go 1.21 · Turso (libSQL) · Upstash Redis REST · tiktoken · Next.js (`web/`)
+Go 1.24 · Turso (libSQL) · Upstash Redis REST · tiktoken · Next.js (`web/`)
 
 ## License
 
