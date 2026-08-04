@@ -9,7 +9,7 @@ export function CtaGroup({
   primaryLabel = "View on GitHub",
   className = "",
 }: Props) {
-  const healthz = demoUrl("/healthz");
+  const status = demoUrl("/v1/status");
   const liveDocs = demoUrl("/docs");
 
   return (
@@ -41,14 +41,14 @@ export function CtaGroup({
           Run locally
         </a>
       )}
-      {healthz ? (
+      {status ? (
         <a
-          href={healthz}
+          href={status}
           className="text-[0.7rem] uppercase tracking-[0.12em] text-muted underline-offset-4 hover:text-signal hover:underline"
           rel="noopener noreferrer"
           target="_blank"
         >
-          /healthz
+          /v1/status
         </a>
       ) : null}
     </div>

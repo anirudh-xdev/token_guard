@@ -72,7 +72,7 @@ const client = new OpenAI({
           Machine-readable API map
         </a>
         <a
-          href={`${apiBase}/healthz`}
+          href={`${apiBase}/v1/status`}
           className="rounded-md border border-line bg-panel px-4 py-2.5 text-sm font-semibold text-text"
           target="_blank"
           rel="noreferrer"
@@ -213,7 +213,7 @@ AFTER   App ──► TokenGuard ──► provider`}
           <span className="border border-line px-2 py-1">/dashboard</span>
           <span className="border border-line px-2 py-1">/portal</span>
           <span className="border border-line px-2 py-1">/v1/tokenguard.json</span>
-          <span className="border border-line px-2 py-1">/healthz</span>
+          <span className="border border-line px-2 py-1">/v1/status</span>
           <span className="border border-line px-2 py-1">/mgmt/*</span>
         </div>
       </section>

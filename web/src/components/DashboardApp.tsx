@@ -89,7 +89,7 @@ export function DashboardApp() {
 
   const checkHealth = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase}/healthz`);
+      const res = await fetch(`${apiBase}/v1/status`);
       const data = await res.json();
       setHealth(data.status === "ok" ? "ok" : JSON.stringify(data));
     } catch {

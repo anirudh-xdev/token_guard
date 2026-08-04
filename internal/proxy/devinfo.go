@@ -6,6 +6,20 @@ import (
 	"strings"
 )
 
+// HandlePublicStatus is a browser-safe liveness probe (CORS-enabled).
+// Prefer this from the Next.js UI; keep /healthz for platform probes (Render).
+func (h *Handler) HandlePublicStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		writeManagementOptions(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeManagementJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // HandleDevInfo exposes a public, non-secret discovery document so developers
 // can learn how to integrate without reading the repo.
 func (h *Handler) HandleDevInfo(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +58,8 @@ func (h *Handler) HandleDevInfo(w http.ResponseWriter, r *http.Request) {
 		"models_priced":       models,
 		"docs_url":            "/docs",
 		"dashboard_url":       "/dashboard",
-		"health_url":          "/healthz",
+		"health_url":          "/v1/status",
+		"healthz_url":         "/healthz",
 		"proxy_base_url_hint": "Use this host as your OpenAI-compatible base URL (usually .../v1).",
 		"openrouter_note":     "OpenRouter upstream base should be https://openrouter.ai/api (not .../api/v1).",
 		"required_headers": map[string]string{
@@ -81,5 +96,5 @@ func (h *Handler) HandleDevInfo(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	writeJSON(w, http.StatusOK, payload)
+	writeManagementJSON(w, http.StatusOK, payload)
 }
