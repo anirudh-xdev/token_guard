@@ -90,7 +90,36 @@ Public pages (no admin secret):
 |-----|---------|
 | `/healthz` | Liveness |
 | `/docs` | Human integration guide |
+| `/portal` | Product sign-in + personal API keys (when portal enabled) |
 | `/v1/tokenguard.json` | Machine discovery (providers, bases, priced models — no secrets) |
+
+## Product portal (hosted users)
+
+If you run TokenGuard as a **hosted product**, end users should use `/portal` — not Turso, Upstash, or the admin secret.
+
+Enable on your instance:
+
+```env
+TOKENGUARD_PORTAL_ENABLED=true
+TOKENGUARD_PORTAL_BASE_URL=https://your-host.example
+TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD=5
+TOKENGUARD_GITHUB_CLIENT_ID=...
+TOKENGUARD_GITHUB_CLIENT_SECRET=...
+# Local http only:
+# TOKENGUARD_PORTAL_SECURE_COOKIES=false
+# TOKENGUARD_PORTAL_DEV_LOGIN=true
+```
+
+GitHub OAuth callback URL: `{TOKENGUARD_PORTAL_BASE_URL}/portal/callback/github`
+
+User flow:
+
+1. Open `/portal` and sign in with GitHub  
+2. Create an API key (shown once)  
+3. Point the SDK at `{host}/v1` and send `X-TokenGuard-API-Key`  
+4. Keep using their own provider API key  
+
+Operator `/dashboard` remains for you (pricing, support, budget overrides).
 
 ## Real Guarded Mode
 

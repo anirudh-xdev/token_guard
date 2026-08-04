@@ -29,6 +29,9 @@ func main() {
 	if config.ManagementEnabled && !config.GuardEnabled {
 		log.Fatal("management endpoints require TOKENGUARD_GUARD_ENABLED=true")
 	}
+	if config.PortalEnabled && !config.GuardEnabled {
+		log.Fatal("portal requires TOKENGUARD_GUARD_ENABLED=true")
+	}
 
 	var (
 		options       []proxy.HandlerOption
@@ -93,6 +96,9 @@ func main() {
 		billingStore = store
 		pricingEngine = pricing
 		options = append(options, proxy.WithGuard(store, pricing, breaker))
+		if config.PortalEnabled {
+			options = append(options, proxy.WithPortal(store, ui.PortalHTML))
+		}
 	} else {
 		log.Print("TokenGuard guard disabled; running reverse proxy without budget or loop checks")
 	}
@@ -114,6 +120,23 @@ func main() {
 		_, _ = w.Write(ui.DocsHTML)
 	})
 	mux.HandleFunc("/v1/tokenguard.json", handler.HandleDevInfo)
+	if config.PortalEnabled {
+		mux.HandleFunc("/portal", handler.HandlePortalPage)
+		mux.HandleFunc("/portal/login/github", handler.HandlePortalGitHubLogin)
+		mux.HandleFunc("/portal/callback/github", handler.HandlePortalGitHubCallback)
+		mux.HandleFunc("/portal/dev/login", handler.HandlePortalDevLogin)
+		mux.HandleFunc("/portal/logout", handler.HandlePortalLogout)
+		mux.HandleFunc("/portal/api/me", handler.HandlePortalMe)
+		mux.HandleFunc("/portal/api/keys", handler.HandlePortalCreateKey)
+		mux.HandleFunc("/portal/api/keys/revoke", handler.HandlePortalRevokeKey)
+		log.Print("product portal enabled at /portal")
+	} else {
+		mux.HandleFunc("/portal", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"Portal is disabled. Set TOKENGUARD_PORTAL_ENABLED=true and restart.","code":"portal_disabled"}`))
+		})
+	}
 	if config.ManagementEnabled {
 		mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -60,12 +60,33 @@ func schemaStatements() []string {
   output_cost_per_1k INTEGER NOT NULL CHECK (output_cost_per_1k >= 0),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 )`,
+		`CREATE TABLE IF NOT EXISTS oauth_identities (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  email TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE(provider, subject)
+)`,
+		`CREATE TABLE IF NOT EXISTS auth_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  revoked_at TEXT
+)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_keys_hash_status
   ON api_keys(key_hash, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_user_created
   ON usage_events(user_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_session_created
   ON usage_events(session_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash
+  ON auth_sessions(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_oauth_identities_user
+  ON oauth_identities(user_id)`,
 	}
 
 	out := make([]string, len(statements))

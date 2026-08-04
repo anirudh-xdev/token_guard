@@ -27,3 +27,12 @@ func TestDocsHTMLEmbedded(t *testing.T) {
 		t.Fatal("DocsHTML missing quickstart title")
 	}
 }
+
+func TestPortalHTMLEmbedded(t *testing.T) {
+	if len(ui.PortalHTML) == 0 {
+		t.Fatal("PortalHTML is empty; embed failed")
+	}
+	if !strings.Contains(string(ui.PortalHTML), "Get your API key") {
+		t.Fatal("PortalHTML missing title")
+	}
+}

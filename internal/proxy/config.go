@@ -3,6 +3,7 @@ package proxy
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
@@ -23,6 +24,15 @@ const (
 	tokenizerModelEnv          = "TOKENGUARD_TOKENIZER_MODEL"
 	guardEnabledEnv            = "TOKENGUARD_GUARD_ENABLED"
 	managementEnabledEnv       = "TOKENGUARD_MGMT_ENABLED"
+	portalEnabledEnv           = "TOKENGUARD_PORTAL_ENABLED"
+	portalDevLoginEnv          = "TOKENGUARD_PORTAL_DEV_LOGIN"
+	portalBaseURLEnv           = "TOKENGUARD_PORTAL_BASE_URL"
+	portalDefaultBudgetUSDEnv  = "TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD"
+	portalMaxKeysEnv           = "TOKENGUARD_PORTAL_MAX_KEYS"
+	portalSessionTTLHoursEnv   = "TOKENGUARD_PORTAL_SESSION_TTL_HOURS"
+	portalSecureCookiesEnv     = "TOKENGUARD_PORTAL_SECURE_COOKIES"
+	githubClientIDEnv          = "TOKENGUARD_GITHUB_CLIENT_ID"
+	githubClientSecretEnv      = "TOKENGUARD_GITHUB_CLIENT_SECRET"
 	defaultMaxOutputTokensEnv  = "TOKENGUARD_DEFAULT_MAX_OUTPUT_TOKENS"
 	maxRequestBytesEnv         = "TOKENGUARD_MAX_REQUEST_BYTES"
 	readHeaderTimeoutMillisEnv = "TOKENGUARD_READ_HEADER_TIMEOUT_MS"
@@ -33,18 +43,27 @@ const (
 )
 
 type Config struct {
-	ListenAddr             string
-	UpstreamURL            string
-	DefaultProvider        string
-	ProviderRoutes         map[string]string
-	TokenizerModel         string
-	GuardEnabled           bool
-	ManagementEnabled      bool
-	DefaultMaxOutputTokens int64
-	MaxRequestBytes        int64
-	ReadHeaderTimeout      time.Duration
-	ShutdownTimeout        time.Duration
-	AdminSecret            string
+	ListenAddr                  string
+	UpstreamURL                 string
+	DefaultProvider             string
+	ProviderRoutes              map[string]string
+	TokenizerModel              string
+	GuardEnabled                bool
+	ManagementEnabled           bool
+	PortalEnabled               bool
+	PortalDevLogin              bool
+	PortalBaseURL               string
+	PortalDefaultBudgetMicroUSD int64
+	PortalMaxKeys               int
+	PortalSessionTTL            time.Duration
+	PortalSecureCookies         bool
+	GitHubClientID              string
+	GitHubClientSecret          string
+	DefaultMaxOutputTokens      int64
+	MaxRequestBytes             int64
+	ReadHeaderTimeout           time.Duration
+	ShutdownTimeout             time.Duration
+	AdminSecret                 string
 }
 
 func ConfigFromEnv() (Config, error) {
@@ -68,6 +87,32 @@ func ConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 
+	portalEnabled, err := boolFromEnv(portalEnabledEnv, false)
+	if err != nil {
+		return Config{}, err
+	}
+	portalDevLogin, err := boolFromEnv(portalDevLoginEnv, false)
+	if err != nil {
+		return Config{}, err
+	}
+	portalSecureCookies, err := boolFromEnv(portalSecureCookiesEnv, true)
+	if err != nil {
+		return Config{}, err
+	}
+
+	defaultBudgetUSD, err := floatFromEnv(portalDefaultBudgetUSDEnv, 5)
+	if err != nil {
+		return Config{}, err
+	}
+	maxKeys, err := intFromEnv(portalMaxKeysEnv, 5)
+	if err != nil {
+		return Config{}, err
+	}
+	sessionTTLHours, err := intFromEnv(portalSessionTTLHoursEnv, 720)
+	if err != nil {
+		return Config{}, err
+	}
+
 	providerRoutes, err := providerRoutesFromEnv(providerRoutesEnv)
 	if err != nil {
 		return Config{}, err
@@ -84,18 +129,27 @@ func ConfigFromEnv() (Config, error) {
 	}
 
 	cfg := Config{
-		ListenAddr:             listenAddrFromEnv(),
-		UpstreamURL:            strings.TrimSpace(os.Getenv(upstreamURLEnv)),
-		DefaultProvider:        strings.TrimSpace(os.Getenv(defaultProviderEnv)),
-		ProviderRoutes:         providerRoutes,
-		TokenizerModel:         strings.TrimSpace(os.Getenv(tokenizerModelEnv)),
-		GuardEnabled:           guardEnabled,
-		ManagementEnabled:      managementEnabled,
-		DefaultMaxOutputTokens: defaultMaxOutputTokens,
-		MaxRequestBytes:        maxRequestBytes,
-		ReadHeaderTimeout:      readHeaderTimeout,
-		ShutdownTimeout:        shutdownTimeout,
-		AdminSecret:            strings.TrimSpace(os.Getenv("TOKENGUARD_ADMIN_SECRET")),
+		ListenAddr:                  listenAddrFromEnv(),
+		UpstreamURL:                 strings.TrimSpace(os.Getenv(upstreamURLEnv)),
+		DefaultProvider:             strings.TrimSpace(os.Getenv(defaultProviderEnv)),
+		ProviderRoutes:              providerRoutes,
+		TokenizerModel:              strings.TrimSpace(os.Getenv(tokenizerModelEnv)),
+		GuardEnabled:                guardEnabled,
+		ManagementEnabled:           managementEnabled,
+		PortalEnabled:               portalEnabled,
+		PortalDevLogin:              portalDevLogin,
+		PortalBaseURL:               strings.TrimSpace(os.Getenv(portalBaseURLEnv)),
+		PortalDefaultBudgetMicroUSD: int64(math.Round(defaultBudgetUSD * 1_000_000)),
+		PortalMaxKeys:               maxKeys,
+		PortalSessionTTL:            time.Duration(sessionTTLHours) * time.Hour,
+		PortalSecureCookies:         portalSecureCookies,
+		GitHubClientID:              strings.TrimSpace(os.Getenv(githubClientIDEnv)),
+		GitHubClientSecret:          strings.TrimSpace(os.Getenv(githubClientSecretEnv)),
+		DefaultMaxOutputTokens:      defaultMaxOutputTokens,
+		MaxRequestBytes:             maxRequestBytes,
+		ReadHeaderTimeout:           readHeaderTimeout,
+		ShutdownTimeout:             shutdownTimeout,
+		AdminSecret:                 strings.TrimSpace(os.Getenv("TOKENGUARD_ADMIN_SECRET")),
 	}
 	cfg = cfg.withDefaults()
 
@@ -198,6 +252,26 @@ func (c Config) Validate() error {
 	if c.ManagementEnabled && len(strings.TrimSpace(c.AdminSecret)) < 16 {
 		errs = append(errs, errors.New("TOKENGUARD_ADMIN_SECRET must be at least 16 characters when management endpoints are enabled"))
 	}
+	if c.PortalEnabled {
+		if !c.GuardEnabled {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_ENABLED requires TOKENGUARD_GUARD_ENABLED=true"))
+		}
+		if strings.TrimSpace(c.PortalBaseURL) == "" {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_BASE_URL is required when portal is enabled"))
+		} else if _, err := parseUpstreamURL(c.PortalBaseURL); err != nil {
+			errs = append(errs, fmt.Errorf("TOKENGUARD_PORTAL_BASE_URL: %w", err))
+		}
+		githubReady := strings.TrimSpace(c.GitHubClientID) != "" && strings.TrimSpace(c.GitHubClientSecret) != ""
+		if !githubReady && !c.PortalDevLogin {
+			errs = append(errs, errors.New("portal requires GitHub OAuth credentials or TOKENGUARD_PORTAL_DEV_LOGIN=true"))
+		}
+		if c.PortalDefaultBudgetMicroUSD < 0 {
+			errs = append(errs, errors.New("portal default budget cannot be negative"))
+		}
+		if c.PortalMaxKeys <= 0 {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_MAX_KEYS must be positive"))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -237,6 +311,30 @@ func boolFromEnv(name string, fallback bool) (bool, error) {
 	parsed, err := strconv.ParseBool(raw)
 	if err != nil {
 		return false, fmt.Errorf("%s must be a boolean", name)
+	}
+	return parsed, nil
+}
+
+func intFromEnv(name string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", name)
+	}
+	return parsed, nil
+}
+
+func floatFromEnv(name string, fallback float64) (float64, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseFloat(raw, 64)
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative number", name)
 	}
 	return parsed, nil
 }

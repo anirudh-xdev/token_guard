@@ -11,3 +11,8 @@ var DashboardHTML []byte
 //
 //go:embed docs.html
 var DocsHTML []byte
+
+// PortalHTML is the product sign-in / API key portal (served at /portal).
+//
+//go:embed portal.html
+var PortalHTML []byte

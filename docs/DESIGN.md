@@ -65,3 +65,11 @@ Design choices behind TokenGuard. Prefer these invariants when changing code.
 **Why:** Early product needs a simple admin surface without a frontend build pipeline.
 
 **How:** One `internal/ui/dashboard.html` file embedded into the binary via `go:embed`. CORS headers are set only on `/mgmt/*` responses (not on proxy/guard JSON errors).
+
+## Product portal (Phase 1)
+
+**Why:** Hosted users must not configure Turso/Upstash/admin secret. They sign in, get a personal budget + `tg_` key, and integrate.
+
+**How:** `/portal` with GitHub OAuth (or `TOKENGUARD_PORTAL_DEV_LOGIN` for local/tests). Sessions stored hashed in Turso (`auth_sessions`). Operator `/dashboard` stays separate. Default personal budget from `TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD` (default $5).
+
+**Not yet:** Teams / per-member caps (Phase 2).

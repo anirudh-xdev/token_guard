@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TokenGuard — Get started</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --ink: #10231f;
+  --paper: #f3efe6;
+  --panel: #fffcf6;
+  --line: #d5cec2;
+  --accent: #0f766e;
+  --accent-dark: #0b5a54;
+  --muted: #5c6b66;
+  --danger: #b42318;
+  --ok: #067a4f;
+  --code: #152925;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Source Sans 3", system-ui, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse at 15% 0%, rgba(15,118,110,0.14), transparent 50%),
+    radial-gradient(ellipse at 90% 10%, rgba(196,92,38,0.08), transparent 40%),
+    var(--paper);
+}
+button, input { font: inherit; }
+code, pre, .mono { font-family: "IBM Plex Mono", monospace; }
+a { color: var(--accent-dark); }
+.wrap { width: min(720px, calc(100% - 2rem)); margin: 0 auto; padding: 2.5rem 0 4rem; }
+.brand {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 0.5rem;
+}
+h1 { margin: 0 0 0.5rem; font-size: 2rem; }
+.lead { margin: 0 0 1.5rem; color: var(--muted); line-height: 1.5; }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+.card h2 { margin: 0 0 0.75rem; font-size: 1.1rem; }
+.btn {
+  border: 1px solid var(--ink); background: var(--ink); color: #fff;
+  padding: 0.7rem 1.1rem; font-weight: 600; cursor: pointer; text-decoration: none;
+  display: inline-block;
+}
+.btn:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn.secondary { background: transparent; color: var(--ink); }
+.btn.ghost { background: transparent; border-color: var(--line); color: var(--muted); }
+.btn.small { padding: 0.35rem 0.65rem; font-size: 0.85rem; }
+.err { color: var(--danger); margin: 0 0 1rem; display: none; }
+.ok { color: var(--ok); }
+.muted { color: var(--muted); font-size: 0.92rem; }
+.row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+.stat {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin: 1rem 0;
+}
+.stat div {
+  border: 1px solid var(--line); padding: 0.75rem; background: #fff;
+}
+.stat .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.stat .value { font-family: "IBM Plex Mono", monospace; font-size: 1.15rem; margin-top: 0.25rem; }
+pre {
+  background: var(--code); color: #e8f5f1; padding: 1rem; overflow-x: auto;
+  font-size: 0.82rem; line-height: 1.45; margin: 0.75rem 0 0;
+}
+.hidden { display: none !important; }
+.key-list { list-style: none; padding: 0; margin: 0.75rem 0 0; }
+.key-list li {
+  display: flex; justify-content: space-between; gap: 1rem; align-items: center;
+  padding: 0.55rem 0; border-top: 1px solid var(--line); font-size: 0.92rem;
+}
+.flash {
+  background: #e8f7f0; border: 1px solid #9fd5bc; padding: 0.85rem 1rem; margin-bottom: 1rem;
+}
+.flash code { word-break: break-all; }
+label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; }
+input[type="email"], input[type="text"] {
+  width: 100%; padding: 0.65rem 0.75rem; border: 1px solid var(--line); background: #fff; margin-bottom: 0.75rem;
+}
+@media (max-width: 560px) {
+  .stat { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">TokenGuard</div>
+  <h1>Get your API key</h1>
+  <p class="lead">Sign in, create a key, point your LLM client at this host. Keep your provider API key — we only gate spend and agent loops.</p>
+  <p id="error" class="err"></p>
+
+  <section id="signed-out" class="card">
+    <h2>Sign in</h2>
+    <p class="muted">No Turso, Upstash, or admin setup — just an account and a key.</p>
+    <div class="row" style="margin-top:1rem">
+      <a class="btn" id="github-btn" href="/portal/login/github">Continue with GitHub</a>
+    </div>
+    <div id="dev-login" class="hidden" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--line)">
+      <p class="muted">Dev login (local / tests only)</p>
+      <label for="dev-email">Email</label>
+      <input id="dev-email" type="email" placeholder="you@example.com" />
+      <label for="dev-name">Name</label>
+      <input id="dev-name" type="text" placeholder="Your name" />
+      <button class="btn secondary" type="button" id="dev-btn">Sign in (dev)</button>
+    </div>
+  </section>
+
+  <section id="signed-in" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <h2 style="margin:0">Your account</h2>
+          <p class="muted" id="who" style="margin:0.35rem 0 0"></p>
+        </div>
+        <button class="btn ghost small" type="button" id="logout-btn">Sign out</button>
+      </div>
+      <div class="stat">
+        <div><div class="label">Budget</div><div class="value" id="budget">—</div></div>
+        <div><div class="label">Spent</div><div class="value" id="spent">—</div></div>
+        <div><div class="label">Available</div><div class="value" id="available">—</div></div>
+      </div>
+      <p class="muted">This is your TokenGuard spend ceiling (not your OpenAI/Anthropic bill). Raise it later via the operator or a team plan.</p>
+    </div>
+
+    <div id="new-key-flash" class="flash hidden">
+      <strong>Copy your API key now</strong> — it won’t be shown again.<br />
+      <code id="new-key-value"></code>
+      <div class="row" style="margin-top:0.75rem">
+        <button class="btn small" type="button" id="copy-key-btn">Copy key</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">API keys</h2>
+        <button class="btn small" type="button" id="create-key-btn">Create API key</button>
+      </div>
+      <ul class="key-list" id="key-list"></ul>
+      <p class="muted" id="key-hint"></p>
+    </div>
+
+    <div class="card">
+      <h2>Integrate</h2>
+      <p class="muted">Replace your provider base URL with TokenGuard. Keep sending your provider API key as usual, and add <code>X-TokenGuard-API-Key</code>.</p>
+      <p><strong>Base URL</strong> <code class="mono" id="base-url"></code></p>
+      <pre id="snippet"></pre>
+    </div>
+
+    <p class="muted"><a href="/docs">Full docs</a> · Operator console is separate (<code>/dashboard</code>).</p>
+  </section>
+</div>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const errEl = $("error");
+  let me = null;
+
+  function showError(msg) {
+    if (!msg) { errEl.style.display = "none"; errEl.textContent = ""; return; }
+    errEl.style.display = "block";
+    errEl.textContent = msg;
+  }
+
+  function money(n) {
+    if (typeof n !== "number") return "—";
+    return "$" + n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  }
+
+  function paramsError() {
+    const p = new URLSearchParams(location.search);
+    const e = p.get("error");
+    if (!e) return;
+    const map = {
+      oauth_denied: "GitHub sign-in was cancelled.",
+      oauth_state: "Login state mismatch. Try again.",
+      oauth_failed: "GitHub sign-in failed. Try again.",
+      account_failed: "Could not create your account.",
+      session_failed: "Could not create a session."
+    };
+    showError(map[e] || ("Sign-in error: " + e));
+    history.replaceState({}, "", "/portal");
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}));
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
+    return { res, data };
+  }
+
+  function render() {
+    if (!me) {
+      $("signed-out").classList.remove("hidden");
+      $("signed-in").classList.add("hidden");
+      return;
+    }
+    $("signed-out").classList.add("hidden");
+    $("signed-in").classList.remove("hidden");
+    const u = me.user;
+    $("who").textContent = (u.name || u.email) + " · " + u.email;
+    $("budget").textContent = money(u.budget_usd);
+    $("spent").textContent = money(u.spent_usd);
+    $("available").textContent = money(u.available_usd);
+    const base = me.integration.proxy_base_url;
+    $("base-url").textContent = base;
+    const keyPlaceholder = (u.keys && u.keys.length) ? "tg_your_key" : "tg_create_a_key_first";
+    $("snippet").textContent =
+`curl -X POST ${me.integration.proxy_url} \\
+  -H "Authorization: Bearer $OPENAI_API_KEY" \\
+  -H "X-TokenGuard-API-Key: ${keyPlaceholder}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}],"max_tokens":50}'`;
+
+    const list = $("key-list");
+    list.innerHTML = "";
+    (u.keys || []).forEach((k) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span><code>${k.key_prefix}…</code> <span class="muted">${k.name} · ${k.status}</span></span>`;
+      if (k.status === "active") {
+        const btn = document.createElement("button");
+        btn.className = "btn ghost small";
+        btn.type = "button";
+        btn.textContent = "Revoke";
+        btn.onclick = () => revokeKey(k.id);
+        li.appendChild(btn);
+      }
+      list.appendChild(li);
+    });
+    if (!(u.keys || []).length) {
+      list.innerHTML = `<li class="muted">No keys yet — create one to call the proxy.</li>`;
+    }
+    const can = me.limits && me.limits.can_create_key;
+    $("create-key-btn").disabled = !can;
+    $("key-hint").textContent = can
+      ? `You can create up to ${me.limits.max_keys} active keys.`
+      : `Active key limit reached (${me.limits.max_keys}). Revoke one to create another.`;
+  }
+
+  async function loadMe() {
+    const { res, data } = await api("/portal/api/me");
+    if (res.status === 401) {
+      me = null;
+      render();
+      return;
+    }
+    if (!res.ok) {
+      showError(data.error || "Failed to load account");
+      return;
+    }
+    me = data;
+    render();
+  }
+
+  async function createKey() {
+    showError("");
+    const { res, data } = await api("/portal/api/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "default" })
+    });
+    if (!res.ok) {
+      showError(data.error || "Could not create key");
+      return;
+    }
+    $("new-key-flash").classList.remove("hidden");
+    $("new-key-value").textContent = data.api_key;
+    await loadMe();
+  }
+
+  async function revokeKey(id) {
+    if (!confirm("Revoke this API key? Apps using it will stop working.")) return;
+    const { res, data } = await api("/portal/api/keys/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key_id: id })
+    });
+    if (!res.ok) {
+      showError(data.error || "Could not revoke key");
+      return;
+    }
+    await loadMe();
+  }
+
+  $("create-key-btn").onclick = createKey;
+  $("logout-btn").onclick = async () => {
+    await api("/portal/logout", { method: "POST" });
+    me = null;
+    $("new-key-flash").classList.add("hidden");
+    render();
+  };
+  $("copy-key-btn").onclick = async () => {
+    const v = $("new-key-value").textContent;
+    try { await navigator.clipboard.writeText(v); } catch (_) {}
+  };
+  $("dev-btn").onclick = async () => {
+    showError("");
+    const { res, data } = await api("/portal/dev/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: $("dev-email").value.trim(),
+        name: $("dev-name").value.trim()
+      })
+    });
+    if (!res.ok) {
+      showError(data.error || "Dev login failed");
+      return;
+    }
+    await loadMe();
+  };
+
+  // Probe whether GitHub OAuth /dev login is available by checking config via a soft approach:
+  // If GitHub link 503s we still show it; enable dev form when POST /portal/dev/login is not 404.
+  fetch("/portal/dev/login", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" })
+    .then((r) => {
+      if (r.status !== 404) $("dev-login").classList.remove("hidden");
+    })
+    .catch(() => {});
+
+  paramsError();
+  loadMe();
+})();
+</script>
+</body>
+</html>

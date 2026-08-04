@@ -8,6 +8,16 @@ TokenGuard is a Go reverse proxy that acts as a **financial firewall for LLM API
 
 Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.md](docs/INDEX.md).
 
+## Product surfaces
+
+| Audience | Path | Auth |
+|----------|------|------|
+| End users (hosted product) | `/portal` | GitHub OAuth (or `TOKENGUARD_PORTAL_DEV_LOGIN` locally) |
+| Operators | `/dashboard` + `/mgmt/*` | `TOKENGUARD_ADMIN_SECRET` |
+| Integrators | `/docs`, `/v1/tokenguard.json` | Public |
+
+Do not mix privileges: portal users must never reach `ListUsers` / pricing sync.
+
 ## Layout (edit map)
 
 | Path | Owns |

@@ -70,7 +70,8 @@ Product marketing lives in [`web/`](web/) (Next.js) — separate from the embedd
 | URL | Purpose |
 |-----|---------|
 | `/docs` | Public how-to (no secret) |
-| `/dashboard` | Developer console (admin secret) |
+| `/portal` | Product sign-in + API keys (when portal enabled) |
+| `/dashboard` | Operator console (admin secret) |
 | `/v1/tokenguard.json` | Machine-readable discovery |
 | `/healthz` | Liveness |
 
