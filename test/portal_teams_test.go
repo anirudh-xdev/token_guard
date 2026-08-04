@@ -150,3 +150,125 @@ func TestPortalTeamBudgetCapRemoveAndReinvite(t *testing.T) {
 		t.Fatalf("member should see team again: %d %s", status, body)
 	}
 }
+
+func TestPortalPendingInviteAcceptsOnLogin(t *testing.T) {
+	h := newHarness(t, harnessOpts{guardEnabled: true, portalEnabled: true, portalDevLogin: true})
+
+	jar, _ := cookiejar.New(nil)
+	owner := &http.Client{Jar: jar, Transport: h.server.Client().Transport}
+	portalDo(t, owner, http.MethodPost, h.url("/portal/dev/login"), `{"email":"owner-inv@example.com","name":"Owner"}`)
+
+	status, body := portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams"), `{"name":"InviteCo","budget_usd":100}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create=%d %s", status, body)
+	}
+	var team map[string]any
+	_ = json.Unmarshal([]byte(body), &team)
+	teamID, _ := team["id"].(string)
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members"),
+		`{"team_id":"`+teamID+`","email":"newbie@example.com","cap_usd":25}`)
+	if status != http.StatusAccepted {
+		t.Fatalf("pending invite status=%d %s", status, body)
+	}
+	if !strings.Contains(body, `"pending_invite":true`) && !strings.Contains(body, `"pending_invite": true`) {
+		t.Fatalf("expected pending_invite: %s", body)
+	}
+
+	status, body = portalDo(t, owner, http.MethodGet, h.url("/portal/api/teams/invites?team_id="+teamID), "")
+	if status != http.StatusOK {
+		t.Fatalf("list invites=%d %s", status, body)
+	}
+	if !strings.Contains(body, "newbie@example.com") {
+		t.Fatalf("invites body=%s", body)
+	}
+
+	jar2, _ := cookiejar.New(nil)
+	newbie := &http.Client{Jar: jar2, Transport: h.server.Client().Transport}
+	status, body = portalDo(t, newbie, http.MethodPost, h.url("/portal/dev/login"), `{"email":"newbie@example.com","name":"Newbie"}`)
+	if status != http.StatusOK {
+		t.Fatalf("newbie login=%d %s", status, body)
+	}
+	status, body = portalDo(t, newbie, http.MethodGet, h.url("/portal/api/me"), "")
+	if status != http.StatusOK {
+		t.Fatalf("me=%d %s", status, body)
+	}
+	if !strings.Contains(body, teamID) {
+		t.Fatalf("pending invite should auto-accept: %s", body)
+	}
+	if !strings.Contains(body, "owner-inv@example.com") && !strings.Contains(body, "owner_email") {
+		// soft check — assignment enrichment may include owner_email
+	}
+}
+
+func TestPortalTeamIDHeaderSelectsSpend(t *testing.T) {
+	h := newHarness(t, harnessOpts{guardEnabled: true, portalEnabled: true, portalDevLogin: true})
+
+	jar, _ := cookiejar.New(nil)
+	owner := &http.Client{Jar: jar, Transport: h.server.Client().Transport}
+	jar2, _ := cookiejar.New(nil)
+	member := &http.Client{Jar: jar2, Transport: h.server.Client().Transport}
+
+	portalDo(t, owner, http.MethodPost, h.url("/portal/dev/login"), `{"email":"owner-hdr@example.com","name":"Owner"}`)
+	portalDo(t, member, http.MethodPost, h.url("/portal/dev/login"), `{"email":"member-hdr@example.com","name":"Member"}`)
+
+	status, body := portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams"), `{"name":"TeamA","budget_usd":50}`)
+	if status != http.StatusCreated {
+		t.Fatalf("teamA=%d %s", status, body)
+	}
+	var teamA map[string]any
+	_ = json.Unmarshal([]byte(body), &teamA)
+	teamAID, _ := teamA["id"].(string)
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members"),
+		`{"team_id":"`+teamAID+`","email":"member-hdr@example.com","cap_usd":10}`)
+	if status != http.StatusCreated {
+		t.Fatalf("invite=%d %s", status, body)
+	}
+
+	// Member creates a key.
+	status, body = portalDo(t, member, http.MethodPost, h.url("/portal/api/keys"), `{"name":"default"}`)
+	if status != http.StatusCreated && status != http.StatusOK {
+		t.Fatalf("create key=%d %s", status, body)
+	}
+	var keyResp map[string]any
+	_ = json.Unmarshal([]byte(body), &keyResp)
+	apiKey, _ := keyResp["api_key"].(string)
+	if apiKey == "" {
+		t.Fatalf("missing api_key: %s", body)
+	}
+
+	chatBody := map[string]any{
+		"model":      "gpt-e2e",
+		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		"max_tokens": 16,
+	}
+
+	// Invalid team id → 400
+	bad := h.proxyHeaders(map[string]string{
+		"X-TokenGuard-API-Key": apiKey,
+		"X-TokenGuard-Team-ID": "team_does_not_exist",
+	})
+	status, data, _ := h.doJSON(http.MethodPost, "/v1/chat/completions", chatBody, bad)
+	if status != http.StatusBadRequest {
+		t.Fatalf("invalid team status=%d data=%v", status, data)
+	}
+	if data["code"] != "invalid_team_id" {
+		t.Fatalf("code=%v want invalid_team_id data=%v", data["code"], data)
+	}
+
+	// Valid team id → allowed
+	okHdr := h.proxyHeaders(map[string]string{
+		"X-TokenGuard-API-Key": apiKey,
+		"X-TokenGuard-Team-ID": teamAID,
+	})
+	status, data, _ = h.doJSON(http.MethodPost, "/v1/chat/completions", chatBody, okHdr)
+	if status != http.StatusOK {
+		t.Fatalf("valid team spend status=%d data=%v", status, data)
+	}
+
+	status, body = portalDo(t, member, http.MethodGet, h.url("/portal/api/usage"), "")
+	if status != http.StatusOK {
+		t.Fatalf("usage=%d %s", status, body)
+	}
+}

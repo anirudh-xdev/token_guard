@@ -10,6 +10,23 @@ export function apiBaseUrl(): string {
   return "http://127.0.0.1:8080";
 }
 
+export type TeamAssignment = {
+  id: string;
+  name: string;
+  budget_usd: number;
+  spent_usd: number;
+  available_usd: number;
+  my_role: string;
+  my_cap_usd: number;
+  my_spent_usd: number;
+  my_available_usd?: number;
+  owner_email?: string;
+  owner_name?: string;
+  invited_by_email?: string;
+  invited_by_name?: string;
+  invited_at?: string;
+};
+
 export type AccountView = {
   user_id: string;
   email: string;
@@ -25,16 +42,39 @@ export type AccountView = {
     created_at: string;
   }>;
   active_key_count: number;
-  teams: Array<{
-    id: string;
-    name: string;
-    budget_usd: number;
-    spent_usd: number;
-    available_usd: number;
-    my_role: string;
-    my_cap_usd: number;
-    my_spent_usd: number;
-  }>;
+  teams: TeamAssignment[];
+};
+
+export type TeamMember = {
+  user_id: string;
+  email: string;
+  role: string;
+  cap_usd: number;
+  spent_usd: number;
+  invited_by_email?: string;
+  invited_at?: string;
+};
+
+export type TeamInvite = {
+  id: string;
+  team_id: string;
+  team_name: string;
+  email: string;
+  cap_usd: number;
+  invited_by_email: string;
+  status: string;
+  created_at?: string;
+};
+
+export type PortalUsageEvent = {
+  id: string;
+  user_id: string;
+  provider: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  actual_cost_microusd: number;
+  status: string;
 };
 
 export type MeResponse = {
@@ -124,4 +164,3 @@ export type MgmtPrice = {
   input_cost_per_1k?: number;
   output_cost_per_1k?: number;
 };
-

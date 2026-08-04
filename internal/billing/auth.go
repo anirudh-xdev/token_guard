@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 )
@@ -260,6 +261,10 @@ WHERE u.id = ? AND u.status = 'active'`, userID).Scan(
 		if k.Status == "active" {
 			view.ActiveKeyCount++
 		}
+	}
+	// Auto-accept any pending team invites for this email (member signed up after invite).
+	if _, err := s.AcceptPendingInvitesForEmail(ctx, userID, view.Email); err != nil {
+		log.Printf("accept pending team invites: %v", err)
 	}
 	teams, err := s.ListTeamsForUser(ctx, userID)
 	if err != nil {

@@ -20,6 +20,7 @@ type guardContext struct {
 	analysis         requestAnalysis
 	estimate         models.CostEstimate
 	reservedMicroUSD int64
+	spendTeamID      string
 }
 
 type budgetCheckResult struct {
@@ -68,11 +69,17 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		return nil, false
 	}
 
+	spendTeamID := strings.TrimSpace(r.Header.Get(tokenGuardTeamIDHeader))
+	budgetCtx := r.Context()
+	if spendTeamID != "" {
+		budgetCtx = billing.WithSpendTeamID(budgetCtx, spendTeamID)
+	}
+
 	budgetCh := make(chan budgetCheckResult, 1)
 	loopCh := make(chan loopCheckResult, 1)
 
 	go func() {
-		budgetCh <- h.checkBudget(r.Context(), apiKeySecret, analysis)
+		budgetCh <- h.checkBudget(budgetCtx, apiKeySecret, analysis)
 	}()
 	go func() {
 		loopCh <- h.checkLoop(r.Context(), analysis)
@@ -98,7 +105,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 
 	loopResult := <-loopCh
 	if loopResult.err != nil {
-		h.releaseReservationAsync(budgetResult.apiKey.UserID, budgetResult.reserved)
+		h.releaseReservationAsync(budgetResult.apiKey.UserID, budgetResult.reserved, spendTeamID)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "TokenGuard: circuit breaker unavailable",
 			"code":  "loop_check_unavailable",
@@ -116,7 +123,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		return nil, false
 	}
 	if !loopResult.skipped && loopResult.result.Tripped {
-		h.releaseReservationAsync(budgetResult.apiKey.UserID, budgetResult.reserved)
+		h.releaseReservationAsync(budgetResult.apiKey.UserID, budgetResult.reserved, spendTeamID)
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"error": "TokenGuard: Infinite agent loop detected. Circuit breaker tripped to save budget.",
 			"code":  "loop_detected",
@@ -163,6 +170,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		analysis:         analysis,
 		estimate:         budgetResult.estimate,
 		reservedMicroUSD: budgetResult.reserved,
+		spendTeamID:      spendTeamID,
 	}, true
 }
 
@@ -231,6 +239,11 @@ func (h *Handler) handleBudgetError(w http.ResponseWriter, err error) {
 			"error": "TokenGuard: budget not configured",
 			"code":  "budget_not_configured",
 		})
+	case errors.Is(err, billing.ErrTeamNotFound):
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "TokenGuard: invalid or inaccessible X-TokenGuard-Team-ID",
+			"code":  "invalid_team_id",
+		})
 	case strings.Contains(err.Error(), "model is required"):
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "TokenGuard: model is required for budget checks",
@@ -282,7 +295,7 @@ func (h *Handler) logCompletedUsageAsync(guard *guardContext, streamEvent Stream
 		EstimatedCostMicroUSD: guard.estimate.EstimatedTotalCostMicroUSD,
 		ActualCostMicroUSD:    actualCost,
 		Status:                status,
-	}, guard.reservedMicroUSD)
+	}, guard.reservedMicroUSD, guard.spendTeamID)
 }
 
 func (h *Handler) logUsageAsync(event billing.UsageEvent) {
@@ -298,22 +311,23 @@ func (h *Handler) logUsageAsync(event billing.UsageEvent) {
 	}()
 }
 
-func (h *Handler) settleUsageAsync(event billing.UsageEvent, reservedMicroUSD int64) {
+func (h *Handler) settleUsageAsync(event billing.UsageEvent, reservedMicroUSD int64, spendTeamID string) {
 	if h.budgetStore == nil || event.UserID == "" {
 		return
 	}
 	go func() {
-		if err := h.settleUsageWithRetry(event, reservedMicroUSD); err != nil {
+		if err := h.settleUsageWithRetry(event, reservedMicroUSD, spendTeamID); err != nil {
 			log.Printf("async reserved usage settlement failed user_id=%s status=%s error=%v", event.UserID, event.Status, err)
-			h.releaseReservationSync(event.UserID, reservedMicroUSD)
+			h.releaseReservationSync(event.UserID, reservedMicroUSD, spendTeamID)
 		}
 	}()
 }
 
-func (h *Handler) settleUsageWithRetry(event billing.UsageEvent, reservedMicroUSD int64) error {
+func (h *Handler) settleUsageWithRetry(event billing.UsageEvent, reservedMicroUSD int64, spendTeamID string) error {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), h.asyncLogTimeout)
+		ctx = billing.WithSpendTeamID(ctx, spendTeamID)
 		err := h.budgetStore.SettleReservedUsage(ctx, event, reservedMicroUSD)
 		cancel()
 		if err == nil {
@@ -327,25 +341,27 @@ func (h *Handler) settleUsageWithRetry(event billing.UsageEvent, reservedMicroUS
 	return lastErr
 }
 
-func (h *Handler) releaseReservationAsync(userID string, reservedMicroUSD int64) {
+func (h *Handler) releaseReservationAsync(userID string, reservedMicroUSD int64, spendTeamID string) {
 	if h.budgetStore == nil || userID == "" || reservedMicroUSD <= 0 {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), h.asyncLogTimeout)
 		defer cancel()
+		ctx = billing.WithSpendTeamID(ctx, spendTeamID)
 		if err := h.budgetStore.ReleaseReservation(ctx, userID, reservedMicroUSD); err != nil {
 			log.Printf("async reservation release failed user_id=%s error=%v", userID, err)
 		}
 	}()
 }
 
-func (h *Handler) releaseReservationSync(userID string, reservedMicroUSD int64) {
+func (h *Handler) releaseReservationSync(userID string, reservedMicroUSD int64, spendTeamID string) {
 	if h.budgetStore == nil || userID == "" || reservedMicroUSD <= 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), h.asyncLogTimeout)
 	defer cancel()
+	ctx = billing.WithSpendTeamID(ctx, spendTeamID)
 	if err := h.budgetStore.ReleaseReservation(ctx, userID, reservedMicroUSD); err != nil {
 		log.Printf("reservation release fallback failed user_id=%s error=%v", userID, err)
 	}

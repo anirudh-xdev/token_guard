@@ -127,19 +127,81 @@ func (h *Handler) HandlePortalAddTeamMember(w http.ResponseWriter, r *http.Reque
 		writePortalJSON(w, http.StatusBadRequest, map[string]string{"error": "cap_usd must be >= 0"})
 		return
 	}
-	member, err := h.accountStore.AddTeamMemberByEmail(r.Context(), userID, req.TeamID, req.Email, usdToMicro(*req.CapUSD))
+	result, err := h.accountStore.AddTeamMemberOrInvite(r.Context(), userID, req.TeamID, req.Email, usdToMicro(*req.CapUSD))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, billing.ErrNotTeamOwner) {
 			status = http.StatusForbidden
 		}
-		if errors.Is(err, billing.ErrCapExceedsPool) || errors.Is(err, billing.ErrTeamMemberExists) {
+		if errors.Is(err, billing.ErrCapExceedsPool) || errors.Is(err, billing.ErrTeamMemberExists) || errors.Is(err, billing.ErrTeamInvitePending) {
 			status = http.StatusBadRequest
 		}
 		writePortalJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
-	writePortalJSON(w, http.StatusCreated, member)
+	if result.PendingInvite {
+		writePortalJSON(w, http.StatusAccepted, map[string]any{
+			"pending_invite": true,
+			"invite":         result.Invite,
+			"message":        "Invite created. They join automatically after signing in at /portal.",
+		})
+		return
+	}
+	writePortalJSON(w, http.StatusCreated, result.Member)
+}
+
+func (h *Handler) HandlePortalListPendingInvites(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	userID, ok := h.requirePortalUser(w, r)
+	if !ok {
+		return
+	}
+	teamID := strings.TrimSpace(r.URL.Query().Get("team_id"))
+	if teamID == "" {
+		writePortalJSON(w, http.StatusBadRequest, map[string]string{"error": "team_id query param is required"})
+		return
+	}
+	invites, err := h.accountStore.ListPendingInvitesForTeam(r.Context(), userID, teamID)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, billing.ErrNotTeamOwner) || errors.Is(err, billing.ErrTeamNotFound) {
+			status = http.StatusForbidden
+		}
+		writePortalJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	if invites == nil {
+		invites = []billing.TeamInvite{}
+	}
+	writePortalJSON(w, http.StatusOK, map[string]any{"invites": invites})
+}
+
+func (h *Handler) HandlePortalListUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	userID, ok := h.requirePortalUser(w, r)
+	if !ok {
+		return
+	}
+	teamID := strings.TrimSpace(r.URL.Query().Get("team_id"))
+	events, err := h.accountStore.ListPortalUsage(r.Context(), userID, teamID, 25)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, billing.ErrNotTeamOwner) || errors.Is(err, billing.ErrTeamNotFound) {
+			status = http.StatusForbidden
+		}
+		writePortalJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	if events == nil {
+		events = []billing.UsageEvent{}
+	}
+	writePortalJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
 func (h *Handler) HandlePortalUpdateMemberCap(w http.ResponseWriter, r *http.Request) {

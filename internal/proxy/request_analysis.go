@@ -14,6 +14,7 @@ const (
 	tokenGuardAPIKeyHeader    = "X-TokenGuard-API-Key"
 	tokenGuardAPIKeyAltHeader = "X-TokenGuard-Key"
 	tokenGuardSessionHeader   = "X-TokenGuard-Session-ID"
+	tokenGuardTeamIDHeader    = "X-TokenGuard-Team-ID"
 	sessionIDHeader           = "X-Session-ID"
 )
 
@@ -72,6 +73,7 @@ func stripTokenGuardHeaders(r *http.Request) {
 	r.Header.Del(tokenGuardAPIKeyAltHeader)
 	r.Header.Del(tokenGuardSessionHeader)
 	r.Header.Del(tokenGuardProviderHeader)
+	r.Header.Del(tokenGuardTeamIDHeader)
 }
 
 func analyzeRequest(r *http.Request, body []byte, encoder tokenEncoder, defaultMaxOutputTokens int64) (requestAnalysis, error) {

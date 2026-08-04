@@ -67,6 +67,7 @@ func (h *Handler) HandleDevInfo(w http.ResponseWriter, r *http.Request) {
 			"Authorization / x-api-key": "Your real provider API key (passed through)",
 			"X-TokenGuard-Provider":     "Optional. One of the providers list (e.g. openai, openrouter)",
 			"X-TokenGuard-Session-ID":   "Recommended for agents — enables loop detection",
+			"X-TokenGuard-Team-ID":      "Optional. Charge a specific team pool/cap when you belong to multiple teams",
 		},
 		"admin_header": "X-TokenGuard-Admin-Secret",
 		"mgmt_routes": []string{

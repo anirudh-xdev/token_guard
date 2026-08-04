@@ -18,9 +18,11 @@ HTTP surface of TokenGuard. Full integrator walkthrough: [HOW_TO_USE.md](../HOW_
 | `POST` | `/portal/api/keys/revoke` | Clerk Bearer or session | Revoke own key by `key_id` |
 | `GET` / `POST` | `/portal/api/teams` | Clerk Bearer or session | List / create teams |
 | `POST` | `/portal/api/teams/budget` | Owner | Set team pool USD |
-| `GET` / `POST` | `/portal/api/teams/members` | Member / owner | List members (`?team_id=`) / invite by email + `cap_usd` |
+| `GET` / `POST` | `/portal/api/teams/members` | Member / owner | List members (`?team_id=`) / invite by email + `cap_usd` (202 if pending invite) |
+| `GET` | `/portal/api/teams/invites` | Owner | Pending invites (`?team_id=`) |
 | `POST` | `/portal/api/teams/members/cap` | Owner | Update member cap |
 | `POST` | `/portal/api/teams/members/remove` | Owner | Remove member |
+| `GET` | `/portal/api/usage` | Signed-in | Recent usage; optional `?team_id=` (owner sees team-wide) |
 | `POST` | `/mgmt/provision` | `X-TokenGuard-Admin-Secret` | Create user + `tg_` API key; optional `budget_usd` / `limit_microusd` |
 | `PATCH` / `POST` | `/mgmt/budget` | `X-TokenGuard-Admin-Secret` | Set/extend user budget; optional `reset_spent` |
 | `GET` | `/mgmt/users` | `X-TokenGuard-Admin-Secret` | List users and budgets |
@@ -40,6 +42,7 @@ Management routes also accept `OPTIONS` for CORS preflight. CORS headers (`Acces
 | `X-TokenGuard-API-Key` or `X-TokenGuard-Key` | Yes when guard on | User key (`tg_...`) |
 | `X-TokenGuard-Provider` | No | Named provider from `TOKENGUARD_PROVIDER_ROUTES` |
 | `X-TokenGuard-Session-ID` | Recommended for agents | Loop detection scope |
+| `X-TokenGuard-Team-ID` | No | Charge a specific team pool/cap (must be an active membership) |
 | Provider auth (`Authorization`, `x-api-key`, …) | Yes | Passed through to upstream |
 
 TokenGuard strips its own `X-TokenGuard-*` headers before forwarding.

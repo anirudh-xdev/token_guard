@@ -205,6 +205,8 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		})
 		mux.HandleFunc("/portal/api/teams/members/cap", handler.HandlePortalUpdateMemberCap)
 		mux.HandleFunc("/portal/api/teams/members/remove", handler.HandlePortalRemoveTeamMember)
+		mux.HandleFunc("/portal/api/teams/invites", handler.HandlePortalListPendingInvites)
+		mux.HandleFunc("/portal/api/usage", handler.HandlePortalListUsage)
 	}
 	if opts.mgmtEnabled {
 		mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
@@ -396,6 +398,7 @@ type memoryStore struct {
 	sessions   map[string]memSession
 	teams      map[string]memTeam
 	members    map[string]memTeamMember // teamID|userID
+	invites    map[string]memInvite     // invite id
 	failLookup bool
 	failBudget bool
 	seq        int
@@ -409,6 +412,13 @@ type memTeam struct {
 type memTeamMember struct {
 	teamID, userID, role, status string
 	cap, spent, reserved         int64
+	invitedBy                    string
+	invitedAt                    string
+}
+
+type memInvite struct {
+	id, teamID, email, invitedBy, status, createdAt string
+	cap                                             int64
 }
 
 func newMemoryStore(events chan billing.UsageEvent) *memoryStore {
@@ -459,12 +469,82 @@ func (s *memoryStore) ReserveBudget(ctx context.Context, userID string, amountMi
 	if !ok {
 		return billing.Budget{}, false, billing.ErrBudgetNotFound
 	}
+	preferred := billing.SpendTeamIDFromContext(ctx)
+	scope, onTeam, err := s.teamScopeLocked(userID, preferred)
+	if err != nil {
+		return billing.Budget{}, false, err
+	}
+	if onTeam {
+		memberAvail := scope.cap - scope.spent - scope.reserved
+		teamAvail := scope.teamLimit - scope.teamSpent - scope.teamReserved
+		if memberAvail < amountMicroUSD || teamAvail < amountMicroUSD {
+			return billing.Budget{
+				UserID:           userID,
+				LimitMicroUSD:    scope.cap,
+				SpentMicroUSD:    scope.spent,
+				ReservedMicroUSD: scope.reserved,
+			}, false, nil
+		}
+		m := s.members[scope.teamID+"|"+userID]
+		m.reserved += amountMicroUSD
+		s.members[scope.teamID+"|"+userID] = m
+		t := s.teams[scope.teamID]
+		t.reserved += amountMicroUSD
+		s.teams[scope.teamID] = t
+		b.ReservedMicroUSD += amountMicroUSD
+		s.budgets[userID] = b
+		return b, true, nil
+	}
 	if amountMicroUSD > b.AvailableMicroUSD() {
 		return b, false, nil
 	}
 	b.ReservedMicroUSD += amountMicroUSD
 	s.budgets[userID] = b
 	return b, true, nil
+}
+
+type memTeamScope struct {
+	teamID, userID                       string
+	cap, spent, reserved                 int64
+	teamLimit, teamSpent, teamReserved   int64
+}
+
+func (s *memoryStore) teamScopeLocked(userID, preferred string) (memTeamScope, bool, error) {
+	if preferred != "" {
+		m, ok := s.members[preferred+"|"+userID]
+		if !ok || m.status != "active" {
+			return memTeamScope{}, false, fmt.Errorf("%w: not an active member of team %s", billing.ErrTeamNotFound, preferred)
+		}
+		t := s.teams[preferred]
+		return memTeamScope{
+			teamID: preferred, userID: userID,
+			cap: m.cap, spent: m.spent, reserved: m.reserved,
+			teamLimit: t.limit, teamSpent: t.spent, teamReserved: t.reserved,
+		}, true, nil
+	}
+	var best *memTeamScope
+	for _, m := range s.members {
+		if m.userID != userID || m.status != "active" {
+			continue
+		}
+		t := s.teams[m.teamID]
+		scope := memTeamScope{
+			teamID: m.teamID, userID: userID,
+			cap: m.cap, spent: m.spent, reserved: m.reserved,
+			teamLimit: t.limit, teamSpent: t.spent, teamReserved: t.reserved,
+		}
+		if best == nil || m.role == "owner" {
+			cp := scope
+			best = &cp
+			if m.role == "owner" {
+				break
+			}
+		}
+	}
+	if best == nil {
+		return memTeamScope{}, false, nil
+	}
+	return *best, true, nil
 }
 
 func (s *memoryStore) RecordUsage(ctx context.Context, event billing.UsageEvent) error {
@@ -495,6 +575,27 @@ func (s *memoryStore) SettleReservedUsage(ctx context.Context, event billing.Usa
 			s.users[event.UserID] = u
 		}
 	}
+	preferred := billing.SpendTeamIDFromContext(ctx)
+	if scope, onTeam, err := s.teamScopeLocked(event.UserID, preferred); err == nil && onTeam {
+		m := s.members[scope.teamID+"|"+event.UserID]
+		m.reserved -= reservedMicroUSD
+		if m.reserved < 0 {
+			m.reserved = 0
+		}
+		if event.Status == "completed" {
+			m.spent += event.ActualCostMicroUSD
+		}
+		s.members[scope.teamID+"|"+event.UserID] = m
+		t := s.teams[scope.teamID]
+		t.reserved -= reservedMicroUSD
+		if t.reserved < 0 {
+			t.reserved = 0
+		}
+		if event.Status == "completed" {
+			t.spent += event.ActualCostMicroUSD
+		}
+		s.teams[scope.teamID] = t
+	}
 	s.usage = append(s.usage, event)
 	s.mu.Unlock()
 	select {
@@ -516,6 +617,21 @@ func (s *memoryStore) ReleaseReservation(ctx context.Context, userID string, res
 		b.ReservedMicroUSD = 0
 	}
 	s.budgets[userID] = b
+	preferred := billing.SpendTeamIDFromContext(ctx)
+	if scope, onTeam, err := s.teamScopeLocked(userID, preferred); err == nil && onTeam {
+		m := s.members[scope.teamID+"|"+userID]
+		m.reserved -= reservedMicroUSD
+		if m.reserved < 0 {
+			m.reserved = 0
+		}
+		s.members[scope.teamID+"|"+userID] = m
+		t := s.teams[scope.teamID]
+		t.reserved -= reservedMicroUSD
+		if t.reserved < 0 {
+			t.reserved = 0
+		}
+		s.teams[scope.teamID] = t
+	}
 	return nil
 }
 
@@ -771,6 +887,7 @@ func (s *memoryStore) GetAccountView(ctx context.Context, userID string) (billin
 	if !ok {
 		return billing.AccountView{}, billing.ErrBudgetNotFound
 	}
+	s.acceptPendingInvitesLocked(userID, u.Email)
 	b := s.budgets[userID]
 	available := b.AvailableMicroUSD()
 	view := billing.AccountView{
@@ -803,6 +920,31 @@ func (s *memoryStore) GetAccountView(ctx context.Context, userID string) (billin
 	return view, nil
 }
 
+func (s *memoryStore) acceptPendingInvitesLocked(userID, email string) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if s.invites == nil {
+		return
+	}
+	for id, inv := range s.invites {
+		if inv.status != "pending" || !strings.EqualFold(inv.email, email) {
+			continue
+		}
+		key := inv.teamID + "|" + userID
+		if m, ok := s.members[key]; ok && m.status == "active" {
+			inv.status = "accepted"
+			s.invites[id] = inv
+			continue
+		}
+		s.members[key] = memTeamMember{
+			teamID: inv.teamID, userID: userID, role: "member", status: "active",
+			cap: inv.cap, invitedBy: inv.invitedBy,
+			invitedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		inv.status = "accepted"
+		s.invites[id] = inv
+	}
+}
+
 func (s *memoryStore) CreateTeam(ctx context.Context, ownerUserID, name string, limitMicroUSD int64) (billing.Team, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -815,12 +957,18 @@ func (s *memoryStore) CreateTeam(ctx context.Context, ownerUserID, name string, 
 	}
 	id := s.nextID("team")
 	s.teams[id] = memTeam{id: id, name: name, owner: ownerUserID, limit: limitMicroUSD}
-	s.members[id+"|"+ownerUserID] = memTeamMember{teamID: id, userID: ownerUserID, role: "owner", status: "active", cap: limitMicroUSD}
+	owner := s.users[ownerUserID]
+	s.members[id+"|"+ownerUserID] = memTeamMember{
+		teamID: id, userID: ownerUserID, role: "owner", status: "active", cap: limitMicroUSD,
+		invitedBy: ownerUserID, invitedAt: time.Now().UTC().Format(time.RFC3339),
+	}
 	return billing.Team{
 		ID: id, Name: name, OwnerUserID: ownerUserID,
+		OwnerEmail: owner.Email, OwnerName: owner.Name,
 		LimitMicroUSD: limitMicroUSD, BudgetUSD: float64(limitMicroUSD) / 1e6,
 		AvailableMicroUSD: limitMicroUSD, AvailableUSD: float64(limitMicroUSD) / 1e6,
 		MyRole: "owner", MyCapMicroUSD: limitMicroUSD, MyCapUSD: float64(limitMicroUSD) / 1e6,
+		MyAvailableUSD: float64(limitMicroUSD) / 1e6,
 	}, nil
 }
 
@@ -841,13 +989,23 @@ func (s *memoryStore) teamsForUserLocked(userID string) []billing.Team {
 		if avail < 0 {
 			avail = 0
 		}
+		myAvail := m.cap - m.spent - m.reserved
+		if myAvail < 0 {
+			myAvail = 0
+		}
+		owner := s.users[t.owner]
+		inviter := s.users[m.invitedBy]
 		out = append(out, billing.Team{
 			ID: t.id, Name: t.name, OwnerUserID: t.owner,
+			OwnerEmail: owner.Email, OwnerName: owner.Name,
 			LimitMicroUSD: t.limit, SpentMicroUSD: t.spent, ReservedMicroUSD: t.reserved,
 			AvailableMicroUSD: avail,
 			BudgetUSD: float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
 			MyRole: m.role, MyCapMicroUSD: m.cap, MySpentMicroUSD: m.spent,
 			MyCapUSD: float64(m.cap) / 1e6, MySpentUSD: float64(m.spent) / 1e6,
+			MyAvailableUSD: float64(myAvail) / 1e6,
+			InvitedByUserID: m.invitedBy, InvitedByEmail: inviter.Email, InvitedByName: inviter.Name,
+			InvitedAt: m.invitedAt,
 		})
 	}
 	return out
@@ -890,14 +1048,29 @@ func (s *memoryStore) UpdateTeamBudget(ctx context.Context, ownerUserID, teamID 
 }
 
 func (s *memoryStore) AddTeamMemberByEmail(ctx context.Context, ownerUserID, teamID, email string, capMicroUSD int64) (billing.TeamMember, error) {
+	res, err := s.AddTeamMemberOrInvite(ctx, ownerUserID, teamID, email, capMicroUSD)
+	if err != nil {
+		return billing.TeamMember{}, err
+	}
+	if res.PendingInvite {
+		return billing.TeamMember{}, fmt.Errorf("invite created for %s — they will join after signing in at /portal", email)
+	}
+	if res.Member == nil {
+		return billing.TeamMember{}, fmt.Errorf("member not created")
+	}
+	return *res.Member, nil
+}
+
+func (s *memoryStore) AddTeamMemberOrInvite(ctx context.Context, ownerUserID, teamID, email string, capMicroUSD int64) (billing.AddMemberResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	email = strings.TrimSpace(strings.ToLower(email))
 	t, ok := s.teams[teamID]
 	if !ok || t.owner != ownerUserID {
-		return billing.TeamMember{}, billing.ErrNotTeamOwner
+		return billing.AddMemberResult{}, billing.ErrNotTeamOwner
 	}
 	if capMicroUSD > t.limit {
-		return billing.TeamMember{}, billing.ErrCapExceedsPool
+		return billing.AddMemberResult{}, billing.ErrCapExceedsPool
 	}
 	var memberID, name string
 	for id, u := range s.users {
@@ -906,31 +1079,126 @@ func (s *memoryStore) AddTeamMemberByEmail(ctx context.Context, ownerUserID, tea
 			break
 		}
 	}
+	owner := s.users[ownerUserID]
 	if memberID == "" {
-		return billing.TeamMember{}, fmt.Errorf("no TokenGuard account for email %s", email)
+		if s.invites == nil {
+			s.invites = map[string]memInvite{}
+		}
+		for _, inv := range s.invites {
+			if inv.teamID == teamID && inv.status == "pending" && strings.EqualFold(inv.email, email) {
+				return billing.AddMemberResult{}, billing.ErrTeamInvitePending
+			}
+		}
+		id := s.nextID("inv")
+		s.invites[id] = memInvite{
+			id: id, teamID: teamID, email: email, cap: capMicroUSD,
+			invitedBy: ownerUserID, status: "pending",
+			createdAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		inv := billing.TeamInvite{
+			ID: id, TeamID: teamID, TeamName: t.name, Email: email,
+			CapMicroUSD: capMicroUSD, CapUSD: float64(capMicroUSD) / 1e6,
+			InvitedByEmail: owner.Email, InvitedByName: owner.Name, Status: "pending",
+		}
+		return billing.AddMemberResult{Invite: &inv, PendingInvite: true}, nil
 	}
 	if memberID == ownerUserID {
-		return billing.TeamMember{}, fmt.Errorf("owner is already on the team")
+		return billing.AddMemberResult{}, fmt.Errorf("owner is already on the team")
 	}
 	key := teamID + "|" + memberID
+	now := time.Now().UTC().Format(time.RFC3339)
 	if m, ok := s.members[key]; ok {
 		if m.status == "active" {
-			return billing.TeamMember{}, billing.ErrTeamMemberExists
+			return billing.AddMemberResult{}, billing.ErrTeamMemberExists
 		}
-		// Reactivate removed member.
-		s.members[key] = memTeamMember{teamID: teamID, userID: memberID, role: "member", status: "active", cap: capMicroUSD}
-		return billing.TeamMember{
-			UserID: memberID, Email: email, Name: name, Role: "member",
-			CapMicroUSD: capMicroUSD, CapUSD: float64(capMicroUSD) / 1e6,
-			AvailableMicroUSD: capMicroUSD, AvailableUSD: float64(capMicroUSD) / 1e6,
-		}, nil
+		s.members[key] = memTeamMember{
+			teamID: teamID, userID: memberID, role: "member", status: "active",
+			cap: capMicroUSD, invitedBy: ownerUserID, invitedAt: now,
+		}
+	} else {
+		s.members[key] = memTeamMember{
+			teamID: teamID, userID: memberID, role: "member", status: "active",
+			cap: capMicroUSD, invitedBy: ownerUserID, invitedAt: now,
+		}
 	}
-	s.members[key] = memTeamMember{teamID: teamID, userID: memberID, role: "member", status: "active", cap: capMicroUSD}
-	return billing.TeamMember{
+	member := billing.TeamMember{
 		UserID: memberID, Email: email, Name: name, Role: "member",
 		CapMicroUSD: capMicroUSD, CapUSD: float64(capMicroUSD) / 1e6,
 		AvailableMicroUSD: capMicroUSD, AvailableUSD: float64(capMicroUSD) / 1e6,
-	}, nil
+		InvitedByEmail: owner.Email, InvitedAt: now,
+	}
+	return billing.AddMemberResult{Member: &member}, nil
+}
+
+func (s *memoryStore) ListPendingInvitesForTeam(ctx context.Context, ownerUserID, teamID string) ([]billing.TeamInvite, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok {
+		return nil, billing.ErrTeamNotFound
+	}
+	if t.owner != ownerUserID {
+		return nil, billing.ErrNotTeamOwner
+	}
+	var out []billing.TeamInvite
+	for _, inv := range s.invites {
+		if inv.teamID != teamID || inv.status != "pending" {
+			continue
+		}
+		by := s.users[inv.invitedBy]
+		out = append(out, billing.TeamInvite{
+			ID: inv.id, TeamID: inv.teamID, TeamName: t.name, Email: inv.email,
+			CapMicroUSD: inv.cap, CapUSD: float64(inv.cap) / 1e6,
+			InvitedByEmail: by.Email, InvitedByName: by.Name,
+			Status: inv.status, CreatedAt: inv.createdAt,
+		})
+	}
+	return out, nil
+}
+
+func (s *memoryStore) ListPortalUsage(ctx context.Context, userID, teamID string, limit int) ([]billing.UsageEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	teamID = strings.TrimSpace(teamID)
+	var filtered []billing.UsageEvent
+	if teamID == "" {
+		for _, e := range s.usage {
+			if e.UserID == userID {
+				filtered = append(filtered, e)
+			}
+		}
+	} else {
+		m, ok := s.members[teamID+"|"+userID]
+		if !ok || m.status != "active" {
+			return nil, billing.ErrTeamNotFound
+		}
+		memberIDs := map[string]bool{}
+		if m.role == "owner" {
+			for _, mm := range s.members {
+				if mm.teamID == teamID && mm.status == "active" {
+					memberIDs[mm.userID] = true
+				}
+			}
+		} else {
+			memberIDs[userID] = true
+		}
+		for _, e := range s.usage {
+			if memberIDs[e.UserID] {
+				filtered = append(filtered, e)
+			}
+		}
+	}
+	if len(filtered) > limit {
+		filtered = filtered[len(filtered)-limit:]
+	}
+	// newest last in append order — reverse for DESC-like
+	for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
+		filtered[i], filtered[j] = filtered[j], filtered[i]
+	}
+	return filtered, nil
 }
 
 func (s *memoryStore) UpdateTeamMemberCap(ctx context.Context, ownerUserID, teamID, memberUserID string, capMicroUSD int64) (billing.TeamMember, error) {
@@ -994,9 +1262,11 @@ func (s *memoryStore) ListTeamMembers(ctx context.Context, requesterUserID, team
 		if avail < 0 {
 			avail = 0
 		}
+		inviter := s.users[m.invitedBy]
 		out = append(out, billing.TeamMember{
 			UserID: m.userID, Email: u.Email, Name: u.Name, Role: m.role,
 			CapMicroUSD: m.cap, SpentMicroUSD: m.spent, ReservedMicroUSD: m.reserved,
+			InvitedByEmail: inviter.Email, InvitedAt: m.invitedAt,
 			AvailableMicroUSD: avail,
 			CapUSD: float64(m.cap) / 1e6, SpentUSD: float64(m.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
 		})

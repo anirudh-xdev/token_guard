@@ -97,9 +97,22 @@ func schemaStatements() []string {
   cap_microusd INTEGER NOT NULL CHECK (cap_microusd >= 0),
   spent_microusd INTEGER NOT NULL DEFAULT 0 CHECK (spent_microusd >= 0),
   reserved_microusd INTEGER NOT NULL DEFAULT 0 CHECK (reserved_microusd >= 0),
+  invited_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  invited_at TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   PRIMARY KEY (team_id, user_id)
+)`,
+		`CREATE TABLE IF NOT EXISTS team_invites (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  cap_microusd INTEGER NOT NULL CHECK (cap_microusd >= 0),
+  invited_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'accepted', 'revoked')),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_api_keys_hash_status
   ON api_keys(key_hash, status)`,
@@ -113,9 +126,19 @@ func schemaStatements() []string {
   ON oauth_identities(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_team_members_user
   ON team_members(user_id, status)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_team_invites_pending
+  ON team_invites(team_id, email) WHERE status = 'pending'`,
 	}
 
 	out := make([]string, len(statements))
 	copy(out, statements)
 	return out
+}
+
+// schemaAlterStatements applies additive upgrades for existing databases.
+func schemaAlterStatements() []string {
+	return []string{
+		`ALTER TABLE team_members ADD COLUMN invited_by_user_id TEXT`,
+		`ALTER TABLE team_members ADD COLUMN invited_at TEXT`,
+	}
 }
