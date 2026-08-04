@@ -11,12 +11,15 @@ TokenGuard is a Go reverse proxy / financial firewall for LLM APIs.
 - Proxy-only: `TOKENGUARD_GUARD_ENABLED=false` (no budget/loop)
 - Mgmt/dashboard require guard enabled and `TOKENGUARD_ADMIN_SECRET` (16+ chars)
 
-## Always
+## Surfaces
 
-- Read `AGENTS.md` and `docs/STRUCTURE.md` before large changes
-- Keep money as micro-USD integers; never invent model prices in code (use OpenRouter sync / Turso catalog)
-- Strip `X-TokenGuard-*` before upstream; pass provider auth through
-- Prefer env config (document in `.env.example`) over CLI flags
+| Audience | Path | Auth |
+|----------|------|------|
+| End users | Next.js `web/` `/portal` → Go `/portal/api/*` | Clerk JWT |
+| Operators | Next.js `web/` `/dashboard` → Go `/mgmt/*` | Admin secret |
+| Integrators | `/v1/*` with `tg_` | `X-TokenGuard-API-Key` |
+
+Do not mix portal users into operator mgmt APIs.
 
 ## Do not
 

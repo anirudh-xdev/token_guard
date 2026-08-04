@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { Syne, IBM_Plex_Mono } from "next/font/google";
-import { SiteFooter } from "@/components/SiteFooter";
-import { SiteHeader } from "@/components/SiteHeader";
 import { siteConfig } from "@/lib/site";
 import "./globals.css";
 
@@ -40,11 +38,7 @@ export default function RootLayout({
       lang="en"
       className={`${syne.variable} ${plexMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col atmosphere">
-        <SiteHeader />
-        <main className="flex-1">{children}</main>
-        <SiteFooter />
-      </body>
+      <body className="flex min-h-full flex-col atmosphere">{children}</body>
     </html>
   );
 }

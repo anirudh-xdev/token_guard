@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
 	"tokenguard/internal/billing"
@@ -16,21 +17,32 @@ import (
 )
 
 type Handler struct {
-	target                 *url.URL
-	defaultProvider        string
-	providerRoutes         map[string]providerRoute
-	proxy                  *httputil.ReverseProxy
-	tokenEncoder           tokenEncoder
-	tokenizerModel         string
-	tokenObserver          StreamTokenObserver
-	budgetStore            BudgetStore
-	pricing                *models.PricingEngine
-	circuitBreaker         LoopBreaker
-	asyncLogTimeout        time.Duration
-	maxRequestBytes        int64
-	defaultMaxOutputTokens int64
-	adminSecret            string
-	managementEnabled      bool
+	target                     *url.URL
+	defaultProvider            string
+	providerRoutes             map[string]providerRoute
+	proxy                      *httputil.ReverseProxy
+	tokenEncoder               tokenEncoder
+	tokenizerModel             string
+	tokenObserver              StreamTokenObserver
+	budgetStore                BudgetStore
+	pricing                    *models.PricingEngine
+	circuitBreaker             LoopBreaker
+	asyncLogTimeout            time.Duration
+	maxRequestBytes            int64
+	defaultMaxOutputTokens     int64
+	adminSecret                string
+	managementEnabled          bool
+	accountStore               AccountStore
+	portalEnabledFlag          bool
+	portalDevLogin             bool
+	portalBaseURL              string
+	portalDefaultBudgetMicroUSD int64
+	portalMaxKeys              int
+	portalSessionTTL           time.Duration
+	portalSecureCookies        bool
+	portalAppURL               string
+	portalCORSOrigins          []string
+	clerkSecretKey             string
 }
 
 type HandlerOption func(*handlerOptions)
@@ -42,6 +54,7 @@ type handlerOptions struct {
 	pricing         *models.PricingEngine
 	circuitBreaker  LoopBreaker
 	asyncLogTimeout time.Duration
+	accountStore    AccountStore
 }
 
 func WithStreamTokenObserver(observer StreamTokenObserver) HandlerOption {
@@ -67,6 +80,13 @@ func WithGuard(store BudgetStore, pricing *models.PricingEngine, breaker LoopBre
 func WithAsyncLogTimeout(timeout time.Duration) HandlerOption {
 	return func(options *handlerOptions) {
 		options.asyncLogTimeout = timeout
+	}
+}
+
+// WithPortal wires the product account store (Next.js UI calls /portal/api/*).
+func WithPortal(store AccountStore) HandlerOption {
+	return func(options *handlerOptions) {
+		options.accountStore = store
 	}
 }
 
@@ -100,6 +120,8 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 		options.tokenEncoder = encoder
 	}
 
+	initClerk(cfg.ClerkSecretKey)
+
 	reverseProxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			route := providerFromContext(pr.In.Context())
@@ -121,26 +143,58 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 		Transport: newTransport(),
 	}
 
+	defaultBudget := cfg.PortalDefaultBudgetMicroUSD
+	if defaultBudget <= 0 {
+		defaultBudget = 5_000_000 // $5
+	}
+	maxKeys := cfg.PortalMaxKeys
+	if maxKeys <= 0 {
+		maxKeys = 5
+	}
+	sessionTTL := cfg.PortalSessionTTL
+	if sessionTTL <= 0 {
+		sessionTTL = 30 * 24 * time.Hour
+	}
+
 	return &Handler{
-		target:                 target,
-		defaultProvider:        cfg.DefaultProvider,
-		providerRoutes:         routes,
-		proxy:                  reverseProxy,
-		tokenEncoder:           options.tokenEncoder,
-		tokenizerModel:         cfg.TokenizerModel,
-		tokenObserver:          options.tokenObserver,
-		budgetStore:            options.budgetStore,
-		pricing:                options.pricing,
-		circuitBreaker:         options.circuitBreaker,
-		asyncLogTimeout:        options.asyncLogTimeout,
-		maxRequestBytes:        cfg.MaxRequestBytes,
-		defaultMaxOutputTokens: cfg.DefaultMaxOutputTokens,
-		adminSecret:            cfg.AdminSecret,
-		managementEnabled:      cfg.ManagementEnabled,
+		target:                      target,
+		defaultProvider:             cfg.DefaultProvider,
+		providerRoutes:              routes,
+		proxy:                       reverseProxy,
+		tokenEncoder:                options.tokenEncoder,
+		tokenizerModel:              cfg.TokenizerModel,
+		tokenObserver:               options.tokenObserver,
+		budgetStore:                 options.budgetStore,
+		pricing:                     options.pricing,
+		circuitBreaker:              options.circuitBreaker,
+		asyncLogTimeout:             options.asyncLogTimeout,
+		maxRequestBytes:             cfg.MaxRequestBytes,
+		defaultMaxOutputTokens:      cfg.DefaultMaxOutputTokens,
+		adminSecret:                 cfg.AdminSecret,
+		managementEnabled:           cfg.ManagementEnabled,
+		accountStore:                options.accountStore,
+		portalEnabledFlag:           cfg.PortalEnabled,
+		portalDevLogin:              cfg.PortalDevLogin,
+		portalBaseURL:               cfg.PortalBaseURL,
+		portalDefaultBudgetMicroUSD: defaultBudget,
+		portalMaxKeys:               maxKeys,
+		portalSessionTTL:            sessionTTL,
+		portalSecureCookies:         cfg.PortalSecureCookies,
+		portalAppURL:                cfg.PortalAppURL,
+		portalCORSOrigins:           cfg.PortalCORSOrigins,
+		clerkSecretKey:              cfg.ClerkSecretKey,
 	}, nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if reservedAppPath(r.URL.Path) {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "TokenGuard: this path is not the LLM proxy. Enable TOKENGUARD_PORTAL_ENABLED / TOKENGUARD_MGMT_ENABLED and restart, or use /docs.",
+			"code":  "not_proxy_path",
+		})
+		return
+	}
+
 	route, ok := selectProviderRoute(r, h.defaultProvider, h.providerRoutes)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
@@ -168,6 +222,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if guard != nil {
 		h.logCompletedUsageAsync(guard, streamEvent, streamWriter.StatusCode())
 	}
+}
+
+func reservedAppPath(path string) bool {
+	path = strings.TrimSuffix(path, "/")
+	if path == "" {
+		path = "/"
+	}
+	switch path {
+	case "/portal", "/dashboard", "/docs", "/healthz", "/mgmt":
+		return true
+	}
+	return strings.HasPrefix(path, "/portal/") ||
+		strings.HasPrefix(path, "/dashboard/") ||
+		strings.HasPrefix(path, "/mgmt/") ||
+		path == "/v1/tokenguard.json"
 }
 
 func (h *Handler) Target() *url.URL {

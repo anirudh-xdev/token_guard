@@ -366,7 +366,7 @@ func writeManagementJSON(w http.ResponseWriter, status int, payload any) {
 
 func setManagementCORSHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-TokenGuard-Admin-Secret")
 }
 

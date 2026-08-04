@@ -60,12 +60,59 @@ func schemaStatements() []string {
   output_cost_per_1k INTEGER NOT NULL CHECK (output_cost_per_1k >= 0),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 )`,
+		`CREATE TABLE IF NOT EXISTS oauth_identities (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  email TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE(provider, subject)
+)`,
+		`CREATE TABLE IF NOT EXISTS auth_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  revoked_at TEXT
+)`,
+		`CREATE TABLE IF NOT EXISTS teams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  limit_microusd INTEGER NOT NULL CHECK (limit_microusd >= 0),
+  spent_microusd INTEGER NOT NULL DEFAULT 0 CHECK (spent_microusd >= 0),
+  reserved_microusd INTEGER NOT NULL DEFAULT 0 CHECK (reserved_microusd >= 0),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+)`,
+		`CREATE TABLE IF NOT EXISTS team_members (
+  team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member'
+    CHECK (role IN ('owner', 'member')),
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'removed')),
+  cap_microusd INTEGER NOT NULL CHECK (cap_microusd >= 0),
+  spent_microusd INTEGER NOT NULL DEFAULT 0 CHECK (spent_microusd >= 0),
+  reserved_microusd INTEGER NOT NULL DEFAULT 0 CHECK (reserved_microusd >= 0),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (team_id, user_id)
+)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_keys_hash_status
   ON api_keys(key_hash, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_user_created
   ON usage_events(user_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_events_session_created
   ON usage_events(session_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash
+  ON auth_sessions(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_oauth_identities_user
+  ON oauth_identities(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_team_members_user
+  ON team_members(user_id, status)`,
 	}
 
 	out := make([]string, len(statements))

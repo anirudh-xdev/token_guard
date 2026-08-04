@@ -53,6 +53,7 @@ Product marketing lives in [`web/`](web/) (Next.js) — separate from the embedd
 | Doc | Description |
 |-----|-------------|
 | [HOW_TO_USE.md](HOW_TO_USE.md) | Full setup, providers, budgets, dashboard |
+| [WHY_THIS_STACK.md](WHY_THIS_STACK.md) | Why Go, Turso, Upstash, and the rest |
 | [docs/INDEX.md](docs/INDEX.md) | Docs map |
 | [docs/PRODUCT.md](docs/PRODUCT.md) | What it is for and who uses it |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Request flow and packages |
@@ -69,13 +70,14 @@ Product marketing lives in [`web/`](web/) (Next.js) — separate from the embedd
 | URL | Purpose |
 |-----|---------|
 | `/docs` | Public how-to (no secret) |
-| `/dashboard` | Developer console (admin secret) |
+| `/portal` | Product sign-in + API keys (when portal enabled) |
+| `/dashboard` | Operator console (admin secret) |
 | `/v1/tokenguard.json` | Machine-readable discovery |
 | `/healthz` | Liveness |
 
 ## Stack (short)
 
-Go 1.21 · Turso (libSQL) · Upstash Redis REST · tiktoken · embedded `internal/ui/dashboard.html`
+Go 1.21 · Turso (libSQL) · Upstash Redis REST · tiktoken · Next.js (`web/`)
 
 ## License
 

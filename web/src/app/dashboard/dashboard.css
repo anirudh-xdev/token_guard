@@ -1,0 +1,405 @@
+/* Operator console — scoped under .tg-console (ported from embedded dashboard.html) */
+.tg-console {
+  --tg-ink: #10231f;
+  --tg-paper: #f3efe6;
+  --tg-panel: #fffcf6;
+  --tg-line: #d5cec2;
+  --tg-accent: #0f766e;
+  --tg-accent-dark: #0b5a54;
+  --tg-muted: #5c6b66;
+  --tg-danger: #b42318;
+  --tg-ok: #067a4f;
+  --tg-code: #152925;
+  --tg-sidebar: #16352f;
+  --tg-sidebar-text: #d7ebe6;
+  min-height: 100vh;
+  color: var(--tg-ink);
+  background: var(--tg-paper);
+  font-family: var(--font-syne), system-ui, sans-serif;
+}
+
+.tg-console button,
+.tg-console input {
+  font: inherit;
+}
+
+.tg-console code,
+.tg-console pre,
+.tg-console .mono {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+.tg-console .unlock {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(15, 118, 110, 0.16), transparent 50%),
+    radial-gradient(ellipse at 80% 0%, rgba(196, 92, 38, 0.12), transparent 45%),
+    var(--tg-paper);
+}
+
+.tg-console .unlock-card {
+  width: min(420px, 100%);
+  background: var(--tg-panel);
+  border: 1px solid var(--tg-line);
+  padding: 1.75rem;
+}
+
+.tg-console .unlock-card .brand {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tg-accent);
+  margin-bottom: 0.5rem;
+}
+
+.tg-console .unlock-card h1 {
+  margin: 0 0 0.4rem;
+  font-size: 1.65rem;
+}
+
+.tg-console .unlock-card p {
+  margin: 0 0 1.25rem;
+  color: var(--tg-muted);
+}
+
+.tg-console label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.tg-console input[type="password"],
+.tg-console input[type="text"],
+.tg-console input[type="email"],
+.tg-console input[type="number"] {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--tg-line);
+  background: #fff;
+  margin-bottom: 0.9rem;
+}
+
+.tg-console .btn {
+  border: 1px solid var(--tg-ink);
+  background: var(--tg-ink);
+  color: #fff;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tg-console .btn:hover {
+  background: var(--tg-accent-dark);
+  border-color: var(--tg-accent-dark);
+}
+
+.tg-console .btn.secondary {
+  background: transparent;
+  color: var(--tg-ink);
+}
+
+.tg-console .btn.ghost {
+  background: transparent;
+  border-color: var(--tg-line);
+  color: var(--tg-muted);
+}
+
+.tg-console .btn.small {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.tg-console .err {
+  color: var(--tg-danger);
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+}
+
+.tg-console .layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+.tg-console .sidebar {
+  background: var(--tg-sidebar);
+  color: var(--tg-sidebar-text);
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.tg-console .sidebar .logo {
+  font-family: var(--font-plex-mono), monospace;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin: 0 0.5rem 1.5rem;
+  font-size: 1rem;
+}
+
+.tg-console .nav-btn {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0.65rem 0.75rem;
+  cursor: pointer;
+  width: 100%;
+}
+
+.tg-console .nav-btn.active,
+.tg-console .nav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tg-console .sidebar .foot {
+  margin-top: auto;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+.tg-console .main {
+  padding: 1.75rem 1.5rem 3rem;
+}
+
+.tg-console .header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.tg-console .header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.tg-console .header p {
+  margin: 0.25rem 0 0;
+  color: var(--tg-muted);
+}
+
+.tg-console .panel {
+  background: var(--tg-panel);
+  border: 1px solid var(--tg-line);
+  padding: 1.1rem 1.2rem;
+  margin-bottom: 1rem;
+}
+
+.tg-console .panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.tg-console .grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .tg-console .layout {
+    grid-template-columns: 1fr;
+  }
+  .tg-console .sidebar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .tg-console .sidebar .logo {
+    margin: 0 1rem 0 0;
+  }
+  .tg-console .sidebar .foot {
+    display: none;
+  }
+  .tg-console .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tg-console .steps {
+  counter-reset: step;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tg-console .steps li {
+  counter-increment: step;
+  position: relative;
+  padding: 0.85rem 0.85rem 0.85rem 3rem;
+  border-bottom: 1px solid var(--tg-line);
+}
+
+.tg-console .steps li:last-child {
+  border-bottom: 0;
+}
+
+.tg-console .steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0.6rem;
+  top: 0.9rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--tg-accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.tg-console pre {
+  background: var(--tg-code);
+  color: #e7fff8;
+  padding: 0.9rem;
+  overflow-x: auto;
+  margin: 0.6rem 0 0;
+  white-space: pre-wrap;
+  font-size: 0.78rem;
+}
+
+.tg-console .toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+
+.tg-console table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.tg-console th,
+.tg-console td {
+  text-align: left;
+  padding: 0.65rem 0.4rem;
+  border-bottom: 1px solid var(--tg-line);
+}
+
+.tg-console th {
+  color: var(--tg-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tg-console .badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--tg-line);
+}
+
+.tg-console .badge.ok {
+  color: var(--tg-ok);
+  border-color: rgba(6, 122, 79, 0.35);
+}
+
+.tg-console .badge.bad {
+  color: var(--tg-danger);
+  border-color: rgba(180, 35, 24, 0.35);
+}
+
+.tg-console .tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tg-console .tab {
+  border: 1px solid var(--tg-line);
+  background: transparent;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+
+.tg-console .tab.active {
+  border-color: var(--tg-ink);
+  background: var(--tg-ink);
+  color: #fff;
+}
+
+.tg-console .banner {
+  background: #fff7ed;
+  border: 1px solid #f0d2b4;
+  color: #7a3b12;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+  font-size: 0.92rem;
+}
+
+.tg-console .kv {
+  font-size: 0.9rem;
+  color: var(--tg-muted);
+}
+
+.tg-console .kv strong {
+  color: var(--tg-ink);
+  font-weight: 600;
+}
+
+.tg-console .backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 35, 31, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 20;
+}
+
+.tg-console .modal {
+  width: min(480px, 100%);
+  background: var(--tg-panel);
+  border: 1px solid var(--tg-line);
+  padding: 1.25rem;
+}
+
+.tg-console .modal h2 {
+  margin: 0 0 1rem;
+}
+
+.tg-console .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.tg-console .success-box {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.tg-console .success-box code {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.55rem;
+  background: #052e24;
+  color: #ecfdf5;
+  word-break: break-all;
+}
+
+.tg-console a {
+  color: var(--tg-accent);
+}

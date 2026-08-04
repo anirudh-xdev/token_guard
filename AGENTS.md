@@ -8,6 +8,16 @@ TokenGuard is a Go reverse proxy that acts as a **financial firewall for LLM API
 
 Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.md](docs/INDEX.md).
 
+## Product surfaces
+
+| Audience | Path | Auth |
+|----------|------|------|
+| End users (hosted product) | Next.js `web/` `/portal` + Go `/portal/api/*` | Clerk (Next) → Bearer JWT to Go |
+| Operators | Next.js `web/` `/dashboard` + Go `/mgmt/*` | `TOKENGUARD_ADMIN_SECRET` |
+| Integrators | `/docs`, `/v1/tokenguard.json` | Public |
+
+Do not mix privileges: portal users must never reach `ListUsers` / pricing sync.
+
 ## Layout (edit map)
 
 | Path | Owns |
@@ -17,8 +27,7 @@ Human docs: [README.md](README.md), [HOW_TO_USE.md](HOW_TO_USE.md), [docs/INDEX.
 | `internal/billing/` | Turso schema, budgets, keys, usage |
 | `internal/cache/` | Upstash REST + circuit breaker |
 | `internal/models/` | Pricing load + cost estimate |
-| `internal/ui/` | Embedded admin dashboard |
-| `web/` | Marketing showcase (Next.js; deploy separately) |
+| `web/` | Product UI (`/portal`), operator console (`/dashboard`), integrator docs (`/docs`), marketing |
 | `pricing.json` | Optional bootstrap prices (seed only); live catalog = Turso + OpenRouter sync |
 | `testdata/` | Static JSON/SSE fixtures for offline e2e |
 | `test/` | Offline integration suite (mocks, no cloud) |

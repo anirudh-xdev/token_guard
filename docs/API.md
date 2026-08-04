@@ -7,9 +7,20 @@ HTTP surface of TokenGuard. Full integrator walkthrough: [HOW_TO_USE.md](../HOW_
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
 | `GET` | `/healthz` | None | `{"status":"ok"}` |
-| `GET` | `/docs` | None | Public integration guide |
+| `GET` | `/docs` | — | Redirects to `TOKENGUARD_DOCS_APP_URL` (Next.js integrator guide) |
 | `GET` | `/v1/tokenguard.json` | None | Discovery (providers, bases, priced models) |
-| `GET` | `/dashboard` | None (UI); mgmt secret in UI | Served only if `TOKENGUARD_MGMT_ENABLED=true` |
+| `GET` | `/dashboard` | — | Redirects to `TOKENGUARD_DASHBOARD_APP_URL` when mgmt enabled |
+| `GET` | `/portal` | — | Redirects to `TOKENGUARD_PORTAL_APP_URL` (Next.js UI) |
+| `POST` | `/portal/dev/login` | None (dev only) | Local/test cookie login when `TOKENGUARD_PORTAL_DEV_LOGIN=true` |
+| `POST` / `GET` | `/portal/logout` | Session | Revoke local session cookie |
+| `GET` | `/portal/api/me` | Clerk Bearer or session | Account, budget, keys, teams |
+| `POST` | `/portal/api/keys` | Clerk Bearer or session | Create `tg_` key (plaintext once) |
+| `POST` | `/portal/api/keys/revoke` | Clerk Bearer or session | Revoke own key by `key_id` |
+| `GET` / `POST` | `/portal/api/teams` | Clerk Bearer or session | List / create teams |
+| `POST` | `/portal/api/teams/budget` | Owner | Set team pool USD |
+| `GET` / `POST` | `/portal/api/teams/members` | Member / owner | List members (`?team_id=`) / invite by email + `cap_usd` |
+| `POST` | `/portal/api/teams/members/cap` | Owner | Update member cap |
+| `POST` | `/portal/api/teams/members/remove` | Owner | Remove member |
 | `POST` | `/mgmt/provision` | `X-TokenGuard-Admin-Secret` | Create user + `tg_` API key; optional `budget_usd` / `limit_microusd` |
 | `PATCH` / `POST` | `/mgmt/budget` | `X-TokenGuard-Admin-Secret` | Set/extend user budget; optional `reset_spent` |
 | `GET` | `/mgmt/users` | `X-TokenGuard-Admin-Secret` | List users and budgets |
@@ -75,6 +86,22 @@ X-TokenGuard-Admin-Secret: your-admin-secret
 ```
 
 Default budget when omitted: **$1.00** (`1_000_000` micro-USD).
+
+## Product portal (Phase 1 + Phase 2)
+
+Self-serve path for hosted TokenGuard (users never configure Turso/Upstash):
+
+1. Open Next.js `web/` at `/portal` (or hit Go `GET /portal` → redirects to `TOKENGUARD_PORTAL_APP_URL`)
+2. Sign in with **Clerk** (browser). Go verifies the session JWT on `/portal/api/*`
+3. Create an API key
+4. Point SDK `baseURL` at `{api_host}/v1` and send `X-TokenGuard-API-Key`
+5. Optional: create a **team** with a pool budget and invite members with per-person caps
+
+Default personal budget when a portal account is created: **`TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD`** (default **$5**).
+
+Portal APIs authenticate with `Authorization: Bearer <Clerk session JWT>`. Cookie sessions are for `TOKENGUARD_PORTAL_DEV_LOGIN` / e2e harness only. CORS allowlist: `TOKENGUARD_PORTAL_CORS_ORIGINS`.
+
+Operator `/dashboard` + admin secret remain for support, pricing, and budget overrides.
 
 ## Example: extend budget (after 402)
 

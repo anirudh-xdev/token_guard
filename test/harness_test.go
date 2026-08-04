@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,21 +20,22 @@ import (
 	"tokenguard/internal/cache"
 	"tokenguard/internal/models"
 	"tokenguard/internal/proxy"
-	"tokenguard/internal/ui"
 )
 
 const adminSecret = "tokenguard-e2e-admin-secret"
 
 type harnessOpts struct {
-	mgmtEnabled    bool
-	guardEnabled   bool
+	mgmtEnabled     bool
+	guardEnabled    bool
+	portalEnabled   bool
+	portalDevLogin  bool
 	maxRequestBytes int64
-	budgetLimit    int64
-	breaker        proxy.LoopBreaker
-	upstream       http.Handler
-	openaiURL      string
-	anthropicURL   string
-	openrouterURL  string
+	budgetLimit     int64
+	breaker         proxy.LoopBreaker
+	upstream        http.Handler
+	openaiURL       string
+	anthropicURL    string
+	openrouterURL   string
 }
 
 type harness struct {
@@ -126,17 +128,35 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 			"anthropic":  anthropicURL,
 			"openrouter": openrouterURL,
 		},
-		TokenizerModel:         "gpt-4",
-		GuardEnabled:           opts.guardEnabled,
-		ManagementEnabled:      opts.mgmtEnabled,
-		DefaultMaxOutputTokens: 4096,
-		MaxRequestBytes:        opts.maxRequestBytes,
-		AdminSecret:            adminSecret,
+		TokenizerModel:              "gpt-4",
+		GuardEnabled:                opts.guardEnabled,
+		ManagementEnabled:           opts.mgmtEnabled,
+		PortalEnabled:               opts.portalEnabled,
+		PortalDevLogin:              opts.portalDevLogin,
+		PortalBaseURL:               "http://127.0.0.1",
+		PortalDefaultBudgetMicroUSD: 5_000_000,
+		PortalMaxKeys:               5,
+		PortalSessionTTL:            24 * time.Hour,
+		PortalSecureCookies:         false,
+		PortalAppURL:                "http://localhost:3000/portal",
+		PortalCORSOrigins:           []string{"http://localhost:3000"},
+		DashboardAppURL:             "http://localhost:3000/dashboard",
+		DocsAppURL:                  "http://localhost:3000/docs",
+		ClerkSecretKey:              "sk_test_e2e",
+		DefaultMaxOutputTokens:      4096,
+		MaxRequestBytes:             opts.maxRequestBytes,
+		AdminSecret:                 adminSecret,
 	}
 
 	var handlerOpts []proxy.HandlerOption
 	if opts.guardEnabled {
 		handlerOpts = append(handlerOpts, proxy.WithGuard(store, pricing, breaker), proxy.WithAsyncLogTimeout(time.Second))
+	}
+	if opts.portalEnabled {
+		if !opts.guardEnabled {
+			t.Fatal("portal tests require guardEnabled")
+		}
+		handlerOpts = append(handlerOpts, proxy.WithPortal(store))
 	}
 
 	handler, err := proxy.NewHandler(cfg, handlerOpts...)
@@ -151,16 +171,43 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(ui.DocsHTML)
+		http.Redirect(w, r, cfg.DocsAppURL, http.StatusFound)
 	})
 	mux.HandleFunc("/v1/tokenguard.json", handler.HandleDevInfo)
+	if opts.portalEnabled {
+		mux.HandleFunc("/portal", handler.HandlePortalPage)
+		mux.HandleFunc("/portal/dev/login", handler.HandlePortalDevLogin)
+		mux.HandleFunc("/portal/logout", handler.HandlePortalLogout)
+		mux.HandleFunc("/portal/api/me", handler.HandlePortalMe)
+		mux.HandleFunc("/portal/api/keys", handler.HandlePortalCreateKey)
+		mux.HandleFunc("/portal/api/keys/revoke", handler.HandlePortalRevokeKey)
+		mux.HandleFunc("/portal/api/teams", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				handler.HandlePortalListTeams(w, r)
+			case http.MethodPost:
+				handler.HandlePortalCreateTeam(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})
+		mux.HandleFunc("/portal/api/teams/budget", handler.HandlePortalUpdateTeamBudget)
+		mux.HandleFunc("/portal/api/teams/members", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				handler.HandlePortalListTeamMembers(w, r)
+			case http.MethodPost:
+				handler.HandlePortalAddTeamMember(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})
+		mux.HandleFunc("/portal/api/teams/members/cap", handler.HandlePortalUpdateMemberCap)
+		mux.HandleFunc("/portal/api/teams/members/remove", handler.HandlePortalRemoveTeamMember)
+	}
 	if opts.mgmtEnabled {
 		mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(ui.DashboardHTML)
+			http.Redirect(w, r, cfg.DashboardAppURL, http.StatusFound)
 		})
 		mux.HandleFunc("/mgmt/provision", handler.HandleProvision)
 		mux.HandleFunc("/mgmt/budget", handler.HandleUpdateBudget)
@@ -336,16 +383,31 @@ func (h *harness) drainUsage(timeout time.Duration) {
 // --- memory store ---
 
 type memoryStore struct {
-	mu      sync.Mutex
-	users   map[string]billing.UserBudgetView
-	keys    map[string]billing.APIKey // plaintext -> key
-	budgets map[string]billing.Budget
-	prices  map[string]billing.ModelPrice
-	usage   []billing.UsageEvent
-	events  chan billing.UsageEvent
+	mu         sync.Mutex
+	users      map[string]billing.UserBudgetView
+	keys       map[string]billing.APIKey // plaintext -> key
+	keyMeta    []memKeyMeta
+	budgets    map[string]billing.Budget
+	prices     map[string]billing.ModelPrice
+	usage      []billing.UsageEvent
+	events     chan billing.UsageEvent
+	oauth      map[string]memOAuth
+	sessions   map[string]memSession
+	teams      map[string]memTeam
+	members    map[string]memTeamMember // teamID|userID
 	failLookup bool
 	failBudget bool
-	seq     int
+	seq        int
+}
+
+type memTeam struct {
+	id, name, owner string
+	limit, spent, reserved int64
+}
+
+type memTeamMember struct {
+	teamID, userID, role, status string
+	cap, spent, reserved         int64
 }
 
 func newMemoryStore(events chan billing.UsageEvent) *memoryStore {
@@ -478,7 +540,15 @@ func (s *memoryStore) CreateAPIKey(ctx context.Context, userID, name string) (st
 	defer s.mu.Unlock()
 	id := s.nextID("key")
 	plain := "tg_" + id
-	s.keys[plain] = billing.APIKey{ID: id, UserID: userID, KeyPrefix: plain[:6]}
+	prefix := plain
+	if len(prefix) > 6 {
+		prefix = prefix[:6]
+	}
+	s.keys[plain] = billing.APIKey{ID: id, UserID: userID, KeyPrefix: prefix}
+	s.keyMeta = append(s.keyMeta, memKeyMeta{
+		id: id, userID: userID, name: name, prefix: prefix, status: "active",
+		createdAt: time.Now().UTC().Format(time.RFC3339), plaintext: plain,
+	})
 	return id, plain, nil
 }
 
@@ -601,6 +671,347 @@ func (s *memoryStore) UpsertMissingModelPrices(ctx context.Context, prices map[s
 	return n, nil
 }
 
+// --- portal / account store ---
+
+type memOAuth struct {
+	userID string
+	email  string
+}
+
+type memSession struct {
+	id        string
+	userID    string
+	expiresAt time.Time
+	revoked   bool
+}
+
+type memKeyMeta struct {
+	id        string
+	userID    string
+	name      string
+	prefix    string
+	status    string
+	createdAt string
+	plaintext string
+}
+
+func (s *memoryStore) EnsureOAuthUser(ctx context.Context, provider, subject, email, name string, defaultLimitMicroUSD int64) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.oauth == nil {
+		s.oauth = map[string]memOAuth{}
+	}
+	key := provider + ":" + subject
+	if existing, ok := s.oauth[key]; ok {
+		return existing.userID, false, nil
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+	for id, u := range s.users {
+		if strings.EqualFold(u.Email, email) {
+			s.oauth[key] = memOAuth{userID: id, email: email}
+			return id, false, nil
+		}
+	}
+	if defaultLimitMicroUSD <= 0 {
+		defaultLimitMicroUSD = 1_000_000
+	}
+	id := s.nextID("user")
+	s.users[id] = billing.UserBudgetView{
+		UserID: id, Email: email, Name: name, LimitMicroUSD: defaultLimitMicroUSD,
+	}
+	s.budgets[id] = billing.Budget{UserID: id, LimitMicroUSD: defaultLimitMicroUSD}
+	s.oauth[key] = memOAuth{userID: id, email: email}
+	return id, true, nil
+}
+
+func (s *memoryStore) CreateAuthSession(ctx context.Context, userID string, ttl time.Duration) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sessions == nil {
+		s.sessions = map[string]memSession{}
+	}
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	plain := "tgs_" + s.nextID("tok")
+	s.sessions[plain] = memSession{
+		id: s.nextID("sess"), userID: userID, expiresAt: time.Now().UTC().Add(ttl),
+	}
+	return plain, nil
+}
+
+func (s *memoryStore) LookupAuthSession(ctx context.Context, plaintext string) (billing.AuthSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[plaintext]
+	if !ok || sess.revoked {
+		return billing.AuthSession{}, billing.ErrSessionNotFound
+	}
+	if time.Now().UTC().After(sess.expiresAt) {
+		return billing.AuthSession{}, billing.ErrSessionExpired
+	}
+	return billing.AuthSession{ID: sess.id, UserID: sess.userID}, nil
+}
+
+func (s *memoryStore) RevokeAuthSession(ctx context.Context, plaintext string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[plaintext]; ok {
+		sess.revoked = true
+		s.sessions[plaintext] = sess
+	}
+	return nil
+}
+
+func (s *memoryStore) GetAccountView(ctx context.Context, userID string) (billing.AccountView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[userID]
+	if !ok {
+		return billing.AccountView{}, billing.ErrBudgetNotFound
+	}
+	b := s.budgets[userID]
+	available := b.AvailableMicroUSD()
+	view := billing.AccountView{
+		UserID:            u.UserID,
+		Email:             u.Email,
+		Name:              u.Name,
+		LimitMicroUSD:     b.LimitMicroUSD,
+		SpentMicroUSD:     b.SpentMicroUSD,
+		ReservedMicroUSD:  b.ReservedMicroUSD,
+		AvailableMicroUSD: available,
+		BudgetUSD:         float64(b.LimitMicroUSD) / 1_000_000,
+		SpentUSD:          float64(b.SpentMicroUSD) / 1_000_000,
+		AvailableUSD:      float64(available) / 1_000_000,
+		Teams:             []billing.Team{},
+	}
+	for _, k := range s.keyMeta {
+		if k.userID != userID {
+			continue
+		}
+		view.Keys = append(view.Keys, billing.APIKeyMeta{
+			ID: k.id, Name: k.name, KeyPrefix: k.prefix, Status: k.status, CreatedAt: k.createdAt,
+		})
+		if k.status == "active" {
+			view.ActiveKeyCount++
+		}
+	}
+	for _, t := range s.teamsForUserLocked(userID) {
+		view.Teams = append(view.Teams, t)
+	}
+	return view, nil
+}
+
+func (s *memoryStore) CreateTeam(ctx context.Context, ownerUserID, name string, limitMicroUSD int64) (billing.Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.teams == nil {
+		s.teams = map[string]memTeam{}
+		s.members = map[string]memTeamMember{}
+	}
+	if limitMicroUSD <= 0 {
+		limitMicroUSD = 1_000_000
+	}
+	id := s.nextID("team")
+	s.teams[id] = memTeam{id: id, name: name, owner: ownerUserID, limit: limitMicroUSD}
+	s.members[id+"|"+ownerUserID] = memTeamMember{teamID: id, userID: ownerUserID, role: "owner", status: "active", cap: limitMicroUSD}
+	return billing.Team{
+		ID: id, Name: name, OwnerUserID: ownerUserID,
+		LimitMicroUSD: limitMicroUSD, BudgetUSD: float64(limitMicroUSD) / 1e6,
+		AvailableMicroUSD: limitMicroUSD, AvailableUSD: float64(limitMicroUSD) / 1e6,
+		MyRole: "owner", MyCapMicroUSD: limitMicroUSD, MyCapUSD: float64(limitMicroUSD) / 1e6,
+	}, nil
+}
+
+func (s *memoryStore) ListTeamsForUser(ctx context.Context, userID string) ([]billing.Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.teamsForUserLocked(userID), nil
+}
+
+func (s *memoryStore) teamsForUserLocked(userID string) []billing.Team {
+	out := []billing.Team{}
+	for _, m := range s.members {
+		if m.userID != userID || m.status != "active" {
+			continue
+		}
+		t := s.teams[m.teamID]
+		avail := t.limit - t.spent - t.reserved
+		if avail < 0 {
+			avail = 0
+		}
+		out = append(out, billing.Team{
+			ID: t.id, Name: t.name, OwnerUserID: t.owner,
+			LimitMicroUSD: t.limit, SpentMicroUSD: t.spent, ReservedMicroUSD: t.reserved,
+			AvailableMicroUSD: avail,
+			BudgetUSD: float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+			MyRole: m.role, MyCapMicroUSD: m.cap, MySpentMicroUSD: m.spent,
+			MyCapUSD: float64(m.cap) / 1e6, MySpentUSD: float64(m.spent) / 1e6,
+		})
+	}
+	return out
+}
+
+func (s *memoryStore) GetTeamForUser(ctx context.Context, teamID, userID string) (billing.Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.teamsForUserLocked(userID) {
+		if t.ID == teamID {
+			return t, nil
+		}
+	}
+	return billing.Team{}, billing.ErrTeamNotFound
+}
+
+func (s *memoryStore) UpdateTeamBudget(ctx context.Context, ownerUserID, teamID string, limitMicroUSD int64) (billing.Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok || t.owner != ownerUserID {
+		return billing.Team{}, billing.ErrNotTeamOwner
+	}
+	t.limit = limitMicroUSD
+	s.teams[teamID] = t
+	m := s.members[teamID+"|"+ownerUserID]
+	m.cap = limitMicroUSD
+	s.members[teamID+"|"+ownerUserID] = m
+	avail := t.limit - t.spent - t.reserved
+	if avail < 0 {
+		avail = 0
+	}
+	return billing.Team{
+		ID: t.id, Name: t.name, OwnerUserID: t.owner,
+		LimitMicroUSD: t.limit, SpentMicroUSD: t.spent, ReservedMicroUSD: t.reserved,
+		AvailableMicroUSD: avail,
+		BudgetUSD: float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+		MyRole: "owner", MyCapMicroUSD: m.cap, MyCapUSD: float64(m.cap) / 1e6,
+	}, nil
+}
+
+func (s *memoryStore) AddTeamMemberByEmail(ctx context.Context, ownerUserID, teamID, email string, capMicroUSD int64) (billing.TeamMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok || t.owner != ownerUserID {
+		return billing.TeamMember{}, billing.ErrNotTeamOwner
+	}
+	var memberID, name string
+	for id, u := range s.users {
+		if strings.EqualFold(u.Email, email) {
+			memberID, name = id, u.Name
+			break
+		}
+	}
+	if memberID == "" {
+		return billing.TeamMember{}, fmt.Errorf("no TokenGuard account for email %s", email)
+	}
+	key := teamID + "|" + memberID
+	if m, ok := s.members[key]; ok && m.status == "active" {
+		return billing.TeamMember{}, billing.ErrTeamMemberExists
+	}
+	s.members[key] = memTeamMember{teamID: teamID, userID: memberID, role: "member", status: "active", cap: capMicroUSD}
+	return billing.TeamMember{
+		UserID: memberID, Email: email, Name: name, Role: "member",
+		CapMicroUSD: capMicroUSD, CapUSD: float64(capMicroUSD) / 1e6,
+		AvailableMicroUSD: capMicroUSD, AvailableUSD: float64(capMicroUSD) / 1e6,
+	}, nil
+}
+
+func (s *memoryStore) UpdateTeamMemberCap(ctx context.Context, ownerUserID, teamID, memberUserID string, capMicroUSD int64) (billing.TeamMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok || t.owner != ownerUserID {
+		return billing.TeamMember{}, billing.ErrNotTeamOwner
+	}
+	key := teamID + "|" + memberUserID
+	m, ok := s.members[key]
+	if !ok || m.status != "active" {
+		return billing.TeamMember{}, billing.ErrTeamMemberNotFound
+	}
+	m.cap = capMicroUSD
+	s.members[key] = m
+	u := s.users[memberUserID]
+	return billing.TeamMember{
+		UserID: memberUserID, Email: u.Email, Name: u.Name, Role: m.role,
+		CapMicroUSD: capMicroUSD, CapUSD: float64(capMicroUSD) / 1e6,
+		SpentMicroUSD: m.spent, SpentUSD: float64(m.spent) / 1e6,
+	}, nil
+}
+
+func (s *memoryStore) RemoveTeamMember(ctx context.Context, ownerUserID, teamID, memberUserID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.teams[teamID]
+	if !ok || t.owner != ownerUserID {
+		return billing.ErrNotTeamOwner
+	}
+	if memberUserID == ownerUserID {
+		return fmt.Errorf("cannot remove team owner")
+	}
+	key := teamID + "|" + memberUserID
+	m, ok := s.members[key]
+	if !ok {
+		return billing.ErrTeamMemberNotFound
+	}
+	m.status = "removed"
+	s.members[key] = m
+	return nil
+}
+
+func (s *memoryStore) ListTeamMembers(ctx context.Context, requesterUserID, teamID string) ([]billing.TeamMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m, ok := s.members[teamID+"|"+requesterUserID]; !ok || m.status != "active" {
+		return nil, billing.ErrTeamNotFound
+	}
+	var out []billing.TeamMember
+	for _, m := range s.members {
+		if m.teamID != teamID || m.status != "active" {
+			continue
+		}
+		u := s.users[m.userID]
+		avail := m.cap - m.spent - m.reserved
+		if avail < 0 {
+			avail = 0
+		}
+		out = append(out, billing.TeamMember{
+			UserID: m.userID, Email: u.Email, Name: u.Name, Role: m.role,
+			CapMicroUSD: m.cap, SpentMicroUSD: m.spent, ReservedMicroUSD: m.reserved,
+			AvailableMicroUSD: avail,
+			CapUSD: float64(m.cap) / 1e6, SpentUSD: float64(m.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+		})
+	}
+	return out, nil
+}
+
+func (s *memoryStore) CountActiveAPIKeys(ctx context.Context, userID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, k := range s.keyMeta {
+		if k.userID == userID && k.status == "active" {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (s *memoryStore) RevokeAPIKey(ctx context.Context, userID, keyID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, k := range s.keyMeta {
+		if k.userID == userID && k.id == keyID && k.status == "active" {
+			s.keyMeta[i].status = "revoked"
+			if plain := k.plaintext; plain != "" {
+				delete(s.keys, plain)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("api key not found or already revoked")
+}
+
 type fixedBreaker struct {
 	tripped bool
 	err     error
@@ -663,7 +1074,8 @@ func (u *hitCountingUpstream) Hits() int {
 
 // Ensure interfaces compile.
 var (
-	_ proxy.BudgetStore = (*memoryStore)(nil)
-	_ proxy.LoopBreaker = fixedBreaker{}
-	_ proxy.LoopBreaker = (*countingBreaker)(nil)
+	_ proxy.BudgetStore  = (*memoryStore)(nil)
+	_ proxy.AccountStore = (*memoryStore)(nil)
+	_ proxy.LoopBreaker  = fixedBreaker{}
+	_ proxy.LoopBreaker  = (*countingBreaker)(nil)
 )

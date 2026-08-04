@@ -10,9 +10,9 @@ TokenGuard/
 │   ├── billing/                 # Turso store, schema, budgets, keys, usage
 │   ├── cache/                   # Upstash Redis client + circuit breaker
 │   ├── models/                  # Pricing engine
-│   └── ui/                      # Embedded admin dashboard (dashboard.html)
+│   └── models/                  # Pricing engine
 ├── pricing.json                 # Optional bootstrap prices (live catalog = Turso + sync)
-├── web/                         # Marketing showcase (Next.js; not the Go dashboard)
+├── web/                         # /portal + /dashboard + /docs + marketing (Next.js)
 ├── testdata/                    # Static fixtures for offline e2e
 ├── test/                        # Offline integration suite (package e2e)
 ├── .env.example                 # Env template
@@ -72,12 +72,15 @@ TokenGuard/
 | `openrouter_sync.go` | Fetch OpenRouter models API + sync interval env helpers |
 | `price_units.go` | USD/micro-USD conversions |
 
-### `internal/ui`
+### `web/`
 
-| File | Edit when… |
+| Path | Edit when… |
 |------|------------|
-| `dashboard.html` | Admin UI behavior or layout (embedded into the binary at build time) |
-| `dashboard.go` | Embed wiring for `/dashboard` |
+| `src/app/dashboard/` | Operator console page + styles |
+| `src/components/DashboardApp.tsx` | Console behavior (calls Go `/mgmt/*`) |
+| `src/app/(site)/portal/` | Product portal UI |
+| `src/components/IntegratorDocs.tsx` | Integrator guide at `/docs` |
+| `src/app/(site)/docs/` | Docs page shell |
 
 ### Root assets
 

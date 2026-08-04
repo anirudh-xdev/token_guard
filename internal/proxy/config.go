@@ -3,6 +3,7 @@ package proxy
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
@@ -23,6 +24,22 @@ const (
 	tokenizerModelEnv          = "TOKENGUARD_TOKENIZER_MODEL"
 	guardEnabledEnv            = "TOKENGUARD_GUARD_ENABLED"
 	managementEnabledEnv       = "TOKENGUARD_MGMT_ENABLED"
+	portalEnabledEnv           = "TOKENGUARD_PORTAL_ENABLED"
+	portalDevLoginEnv          = "TOKENGUARD_PORTAL_DEV_LOGIN"
+	portalBaseURLEnv           = "TOKENGUARD_PORTAL_BASE_URL"
+	portalDefaultBudgetUSDEnv  = "TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD"
+	portalMaxKeysEnv           = "TOKENGUARD_PORTAL_MAX_KEYS"
+	portalSessionTTLHoursEnv   = "TOKENGUARD_PORTAL_SESSION_TTL_HOURS"
+	portalSecureCookiesEnv     = "TOKENGUARD_PORTAL_SECURE_COOKIES"
+	portalAppURLEnv            = "TOKENGUARD_PORTAL_APP_URL"
+	portalCORSOriginsEnv       = "TOKENGUARD_PORTAL_CORS_ORIGINS"
+	dashboardAppURLEnv         = "TOKENGUARD_DASHBOARD_APP_URL"
+	docsAppURLEnv              = "TOKENGUARD_DOCS_APP_URL"
+	clerkPublishableKeyEnv     = "TOKENGUARD_CLERK_PUBLISHABLE_KEY"
+	clerkSecretKeyEnv          = "TOKENGUARD_CLERK_SECRET_KEY"
+	// Also accept standard Clerk env names.
+	clerkPublishableKeyAltEnv  = "CLERK_PUBLISHABLE_KEY"
+	clerkSecretKeyAltEnv       = "CLERK_SECRET_KEY"
 	defaultMaxOutputTokensEnv  = "TOKENGUARD_DEFAULT_MAX_OUTPUT_TOKENS"
 	maxRequestBytesEnv         = "TOKENGUARD_MAX_REQUEST_BYTES"
 	readHeaderTimeoutMillisEnv = "TOKENGUARD_READ_HEADER_TIMEOUT_MS"
@@ -33,18 +50,31 @@ const (
 )
 
 type Config struct {
-	ListenAddr             string
-	UpstreamURL            string
-	DefaultProvider        string
-	ProviderRoutes         map[string]string
-	TokenizerModel         string
-	GuardEnabled           bool
-	ManagementEnabled      bool
-	DefaultMaxOutputTokens int64
-	MaxRequestBytes        int64
-	ReadHeaderTimeout      time.Duration
-	ShutdownTimeout        time.Duration
-	AdminSecret            string
+	ListenAddr                  string
+	UpstreamURL                 string
+	DefaultProvider             string
+	ProviderRoutes              map[string]string
+	TokenizerModel              string
+	GuardEnabled                bool
+	ManagementEnabled           bool
+	PortalEnabled               bool
+	PortalDevLogin              bool
+	PortalBaseURL               string
+	PortalDefaultBudgetMicroUSD int64
+	PortalMaxKeys               int
+	PortalSessionTTL            time.Duration
+	PortalSecureCookies         bool
+	PortalAppURL                string
+	PortalCORSOrigins           []string
+	DashboardAppURL             string
+	DocsAppURL                  string
+	ClerkPublishableKey         string
+	ClerkSecretKey              string
+	DefaultMaxOutputTokens      int64
+	MaxRequestBytes             int64
+	ReadHeaderTimeout           time.Duration
+	ShutdownTimeout             time.Duration
+	AdminSecret                 string
 }
 
 func ConfigFromEnv() (Config, error) {
@@ -68,6 +98,32 @@ func ConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 
+	portalEnabled, err := boolFromEnv(portalEnabledEnv, false)
+	if err != nil {
+		return Config{}, err
+	}
+	portalDevLogin, err := boolFromEnv(portalDevLoginEnv, false)
+	if err != nil {
+		return Config{}, err
+	}
+	portalSecureCookies, err := boolFromEnv(portalSecureCookiesEnv, true)
+	if err != nil {
+		return Config{}, err
+	}
+
+	defaultBudgetUSD, err := floatFromEnv(portalDefaultBudgetUSDEnv, 5)
+	if err != nil {
+		return Config{}, err
+	}
+	maxKeys, err := intFromEnv(portalMaxKeysEnv, 5)
+	if err != nil {
+		return Config{}, err
+	}
+	sessionTTLHours, err := intFromEnv(portalSessionTTLHoursEnv, 720)
+	if err != nil {
+		return Config{}, err
+	}
+
 	providerRoutes, err := providerRoutesFromEnv(providerRoutesEnv)
 	if err != nil {
 		return Config{}, err
@@ -83,19 +139,41 @@ func ConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 
+	clerkPublishable := strings.TrimSpace(os.Getenv(clerkPublishableKeyEnv))
+	if clerkPublishable == "" {
+		clerkPublishable = strings.TrimSpace(os.Getenv(clerkPublishableKeyAltEnv))
+	}
+	clerkSecret := strings.TrimSpace(os.Getenv(clerkSecretKeyEnv))
+	if clerkSecret == "" {
+		clerkSecret = strings.TrimSpace(os.Getenv(clerkSecretKeyAltEnv))
+	}
+
 	cfg := Config{
-		ListenAddr:             listenAddrFromEnv(),
-		UpstreamURL:            strings.TrimSpace(os.Getenv(upstreamURLEnv)),
-		DefaultProvider:        strings.TrimSpace(os.Getenv(defaultProviderEnv)),
-		ProviderRoutes:         providerRoutes,
-		TokenizerModel:         strings.TrimSpace(os.Getenv(tokenizerModelEnv)),
-		GuardEnabled:           guardEnabled,
-		ManagementEnabled:      managementEnabled,
-		DefaultMaxOutputTokens: defaultMaxOutputTokens,
-		MaxRequestBytes:        maxRequestBytes,
-		ReadHeaderTimeout:      readHeaderTimeout,
-		ShutdownTimeout:        shutdownTimeout,
-		AdminSecret:            strings.TrimSpace(os.Getenv("TOKENGUARD_ADMIN_SECRET")),
+		ListenAddr:                  listenAddrFromEnv(),
+		UpstreamURL:                 strings.TrimSpace(os.Getenv(upstreamURLEnv)),
+		DefaultProvider:             strings.TrimSpace(os.Getenv(defaultProviderEnv)),
+		ProviderRoutes:              providerRoutes,
+		TokenizerModel:              strings.TrimSpace(os.Getenv(tokenizerModelEnv)),
+		GuardEnabled:                guardEnabled,
+		ManagementEnabled:           managementEnabled,
+		PortalEnabled:               portalEnabled,
+		PortalDevLogin:              portalDevLogin,
+		PortalBaseURL:               strings.TrimSpace(os.Getenv(portalBaseURLEnv)),
+		PortalDefaultBudgetMicroUSD: int64(math.Round(defaultBudgetUSD * 1_000_000)),
+		PortalMaxKeys:               maxKeys,
+		PortalSessionTTL:            time.Duration(sessionTTLHours) * time.Hour,
+		PortalSecureCookies:         portalSecureCookies,
+		PortalAppURL:                strings.TrimSpace(os.Getenv(portalAppURLEnv)),
+		PortalCORSOrigins:           csvListFromEnv(portalCORSOriginsEnv),
+		DashboardAppURL:             strings.TrimSpace(os.Getenv(dashboardAppURLEnv)),
+		DocsAppURL:                  strings.TrimSpace(os.Getenv(docsAppURLEnv)),
+		ClerkPublishableKey:         clerkPublishable,
+		ClerkSecretKey:              clerkSecret,
+		DefaultMaxOutputTokens:      defaultMaxOutputTokens,
+		MaxRequestBytes:             maxRequestBytes,
+		ReadHeaderTimeout:           readHeaderTimeout,
+		ShutdownTimeout:             shutdownTimeout,
+		AdminSecret:                 strings.TrimSpace(os.Getenv("TOKENGUARD_ADMIN_SECRET")),
 	}
 	cfg = cfg.withDefaults()
 
@@ -142,7 +220,32 @@ func (c Config) withDefaults() Config {
 	if cfg.MaxRequestBytes == 0 {
 		cfg.MaxRequestBytes = defaultMaxRequestBytes
 	}
+	if cfg.DashboardAppURL == "" {
+		cfg.DashboardAppURL = deriveWebPathURL(cfg.PortalAppURL, "/dashboard")
+	}
+	if cfg.DocsAppURL == "" {
+		cfg.DocsAppURL = deriveWebPathURL(cfg.PortalAppURL, "/docs")
+	}
+	if cfg.DocsAppURL == "" {
+		cfg.DocsAppURL = deriveWebPathURL(cfg.DashboardAppURL, "/docs")
+	}
 	return cfg
+}
+
+// deriveWebPathURL builds {scheme}://{host}{path} from a sibling app URL (e.g. portal → dashboard).
+func deriveWebPathURL(sibling string, path string) string {
+	sibling = strings.TrimSpace(sibling)
+	if sibling == "" {
+		return ""
+	}
+	u, err := url.Parse(sibling)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	u.Path = path
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
 }
 
 // normalizeProviderBaseURL fixes known misconfigurations that cause doubled paths.
@@ -198,6 +301,41 @@ func (c Config) Validate() error {
 	if c.ManagementEnabled && len(strings.TrimSpace(c.AdminSecret)) < 16 {
 		errs = append(errs, errors.New("TOKENGUARD_ADMIN_SECRET must be at least 16 characters when management endpoints are enabled"))
 	}
+	if c.ManagementEnabled {
+		if dash := strings.TrimSpace(c.DashboardAppURL); dash == "" {
+			errs = append(errs, errors.New("TOKENGUARD_DASHBOARD_APP_URL is required when management is enabled (or set TOKENGUARD_PORTAL_APP_URL to derive it)"))
+		} else if _, err := parseUpstreamURL(dash); err != nil {
+			errs = append(errs, fmt.Errorf("TOKENGUARD_DASHBOARD_APP_URL: %w", err))
+		}
+	}
+	if c.PortalEnabled {
+		if !c.GuardEnabled {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_ENABLED requires TOKENGUARD_GUARD_ENABLED=true"))
+		}
+		if strings.TrimSpace(c.PortalBaseURL) == "" {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_BASE_URL is required when portal is enabled"))
+		} else if _, err := parseUpstreamURL(c.PortalBaseURL); err != nil {
+			errs = append(errs, fmt.Errorf("TOKENGUARD_PORTAL_BASE_URL: %w", err))
+		}
+		if app := strings.TrimSpace(c.PortalAppURL); app == "" {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_APP_URL is required when portal is enabled (Next.js /portal)"))
+		} else if _, err := parseUpstreamURL(app); err != nil {
+			errs = append(errs, fmt.Errorf("TOKENGUARD_PORTAL_APP_URL: %w", err))
+		}
+		// JWT verification needs the Clerk secret. Publishable key lives in web/ only.
+		if strings.TrimSpace(c.ClerkSecretKey) == "" && !c.PortalDevLogin {
+			errs = append(errs, errors.New("portal requires TOKENGUARD_CLERK_SECRET_KEY (or TOKENGUARD_PORTAL_DEV_LOGIN=true for harness)"))
+		}
+		if len(c.PortalCORSOrigins) == 0 && !c.PortalDevLogin {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_CORS_ORIGINS is required when portal is enabled (e.g. http://localhost:3000)"))
+		}
+		if c.PortalDefaultBudgetMicroUSD < 0 {
+			errs = append(errs, errors.New("portal default budget cannot be negative"))
+		}
+		if c.PortalMaxKeys <= 0 {
+			errs = append(errs, errors.New("TOKENGUARD_PORTAL_MAX_KEYS must be positive"))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -237,6 +375,46 @@ func boolFromEnv(name string, fallback bool) (bool, error) {
 	parsed, err := strconv.ParseBool(raw)
 	if err != nil {
 		return false, fmt.Errorf("%s must be a boolean", name)
+	}
+	return parsed, nil
+}
+
+func intFromEnv(name string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", name)
+	}
+	return parsed, nil
+}
+
+func csvListFromEnv(name string) []string {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, strings.TrimRight(p, "/"))
+		}
+	}
+	return out
+}
+
+func floatFromEnv(name string, fallback float64) (float64, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseFloat(raw, 64)
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative number", name)
 	}
 	return parsed, nil
 }

@@ -20,15 +20,22 @@ func TestPublicHealthz(t *testing.T) {
 
 func TestPublicDocs(t *testing.T) {
 	h := newHarness(t, harnessOpts{guardEnabled: true, mgmtEnabled: true})
-	status, body, hdr := h.do(http.MethodGet, "/docs", nil, nil)
-	if status != http.StatusOK {
-		t.Fatalf("status = %d", status)
+	client := &http.Client{
+		Transport: h.server.Client().Transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
-	if !strings.Contains(hdr.Get("Content-Type"), "text/html") {
-		t.Fatalf("Content-Type = %q", hdr.Get("Content-Type"))
+	resp, err := client.Get(h.url("/docs"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "TokenGuard") {
-		t.Fatal("docs HTML missing TokenGuard")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d want 302", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "http://localhost:3000/docs" {
+		t.Fatalf("Location = %q", loc)
 	}
 }
 
@@ -68,19 +75,32 @@ func TestDiscoveryJSON(t *testing.T) {
 func TestDashboardGating(t *testing.T) {
 	t.Run("mgmt_on", func(t *testing.T) {
 		h := newHarness(t, harnessOpts{guardEnabled: true, mgmtEnabled: true})
-		status, body, _ := h.do(http.MethodGet, "/dashboard", nil, nil)
-		if status != http.StatusOK {
-			t.Fatalf("status = %d", status)
+		client := &http.Client{
+			Transport: h.server.Client().Transport,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		}
-		if !strings.Contains(string(body), "Unlock console") {
-			t.Fatal("dashboard missing unlock flow")
+		resp, err := client.Get(h.url("/dashboard"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusFound {
+			t.Fatalf("status = %d want 302", resp.StatusCode)
+		}
+		if loc := resp.Header.Get("Location"); loc != "http://localhost:3000/dashboard" {
+			t.Fatalf("Location = %q", loc)
 		}
 	})
 	t.Run("mgmt_off", func(t *testing.T) {
 		h := newHarness(t, harnessOpts{guardEnabled: true, mgmtEnabled: false})
-		_, body, _ := h.do(http.MethodGet, "/dashboard", nil, nil)
-		if strings.Contains(string(body), "Unlock console") {
+		status, body, _ := h.do(http.MethodGet, "/dashboard", nil, nil)
+		if status == http.StatusFound && strings.Contains(string(body), "localhost:3000/dashboard") {
 			t.Fatal("dashboard should not be registered when mgmt disabled")
+		}
+		if strings.Contains(string(body), "Unlock console") {
+			t.Fatal("dashboard HTML should not be served from Go")
 		}
 	})
 }
