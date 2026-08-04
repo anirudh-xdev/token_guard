@@ -896,6 +896,9 @@ func (s *memoryStore) AddTeamMemberByEmail(ctx context.Context, ownerUserID, tea
 	if !ok || t.owner != ownerUserID {
 		return billing.TeamMember{}, billing.ErrNotTeamOwner
 	}
+	if capMicroUSD > t.limit {
+		return billing.TeamMember{}, billing.ErrCapExceedsPool
+	}
 	var memberID, name string
 	for id, u := range s.users {
 		if strings.EqualFold(u.Email, email) {
@@ -906,9 +909,21 @@ func (s *memoryStore) AddTeamMemberByEmail(ctx context.Context, ownerUserID, tea
 	if memberID == "" {
 		return billing.TeamMember{}, fmt.Errorf("no TokenGuard account for email %s", email)
 	}
+	if memberID == ownerUserID {
+		return billing.TeamMember{}, fmt.Errorf("owner is already on the team")
+	}
 	key := teamID + "|" + memberID
-	if m, ok := s.members[key]; ok && m.status == "active" {
-		return billing.TeamMember{}, billing.ErrTeamMemberExists
+	if m, ok := s.members[key]; ok {
+		if m.status == "active" {
+			return billing.TeamMember{}, billing.ErrTeamMemberExists
+		}
+		// Reactivate removed member.
+		s.members[key] = memTeamMember{teamID: teamID, userID: memberID, role: "member", status: "active", cap: capMicroUSD}
+		return billing.TeamMember{
+			UserID: memberID, Email: email, Name: name, Role: "member",
+			CapMicroUSD: capMicroUSD, CapUSD: float64(capMicroUSD) / 1e6,
+			AvailableMicroUSD: capMicroUSD, AvailableUSD: float64(capMicroUSD) / 1e6,
+		}, nil
 	}
 	s.members[key] = memTeamMember{teamID: teamID, userID: memberID, role: "member", status: "active", cap: capMicroUSD}
 	return billing.TeamMember{
@@ -924,6 +939,9 @@ func (s *memoryStore) UpdateTeamMemberCap(ctx context.Context, ownerUserID, team
 	t, ok := s.teams[teamID]
 	if !ok || t.owner != ownerUserID {
 		return billing.TeamMember{}, billing.ErrNotTeamOwner
+	}
+	if capMicroUSD > t.limit {
+		return billing.TeamMember{}, billing.ErrCapExceedsPool
 	}
 	key := teamID + "|" + memberUserID
 	m, ok := s.members[key]

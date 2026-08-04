@@ -21,9 +21,11 @@ export function PortalApp() {
     id: string;
     name: string;
     isOwner: boolean;
+    poolUsd: number;
   } | null>(null);
   const [members, setMembers] = useState<
     Array<{
+      user_id: string;
       email: string;
       role: string;
       cap_usd: number;
@@ -32,6 +34,8 @@ export function PortalApp() {
   >([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteCap, setInviteCap] = useState("200");
+  const [poolEdit, setPoolEdit] = useState("");
+  const [capEdits, setCapEdits] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   const withToken = useCallback(async () => {
@@ -120,11 +124,18 @@ export function PortalApp() {
     }
   }
 
-  async function openTeam(id: string, name: string, isOwner: boolean) {
-    setSelectedTeam({ id, name, isOwner });
+  async function openTeam(
+    id: string,
+    name: string,
+    isOwner: boolean,
+    poolUsd: number,
+  ) {
+    setSelectedTeam({ id, name, isOwner, poolUsd });
+    setPoolEdit(String(poolUsd));
     const token = await withToken();
     const { ok, data } = await tgFetch<{
       members?: Array<{
+        user_id: string;
         email: string;
         role: string;
         cap_usd: number;
@@ -136,7 +147,13 @@ export function PortalApp() {
       setError(data.error || "Failed to load members");
       return;
     }
-    setMembers(data.members || []);
+    const list = data.members || [];
+    setMembers(list);
+    const edits: Record<string, string> = {};
+    for (const m of list) {
+      edits[m.user_id] = String(m.cap_usd);
+    }
+    setCapEdits(edits);
   }
 
   async function inviteMember() {
@@ -162,7 +179,109 @@ export function PortalApp() {
         return;
       }
       setInviteEmail("");
-      await openTeam(selectedTeam.id, selectedTeam.name, selectedTeam.isOwner);
+      await openTeam(
+        selectedTeam.id,
+        selectedTeam.name,
+        selectedTeam.isOwner,
+        selectedTeam.poolUsd,
+      );
+      await loadMe();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveTeamPool() {
+    if (!selectedTeam?.isOwner) return;
+    setBusy(true);
+    setError("");
+    try {
+      const token = await withToken();
+      const { ok, data } = await tgFetch<{ budget_usd?: number; error?: string }>(
+        "/portal/api/teams/budget",
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            team_id: selectedTeam.id,
+            budget_usd: Number(poolEdit),
+          }),
+        },
+      );
+      if (!ok) {
+        setError(data.error || "Update pool failed");
+        return;
+      }
+      const nextPool = data.budget_usd ?? Number(poolEdit);
+      await openTeam(selectedTeam.id, selectedTeam.name, true, nextPool);
+      await loadMe();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveMemberCap(userId: string) {
+    if (!selectedTeam?.isOwner) return;
+    setBusy(true);
+    setError("");
+    try {
+      const token = await withToken();
+      const { ok, data } = await tgFetch<{ error?: string }>(
+        "/portal/api/teams/members/cap",
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            team_id: selectedTeam.id,
+            user_id: userId,
+            cap_usd: Number(capEdits[userId] ?? "0"),
+          }),
+        },
+      );
+      if (!ok) {
+        setError(data.error || "Update cap failed");
+        return;
+      }
+      await openTeam(
+        selectedTeam.id,
+        selectedTeam.name,
+        true,
+        selectedTeam.poolUsd,
+      );
+      await loadMe();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeMember(userId: string, email: string) {
+    if (!selectedTeam?.isOwner) return;
+    if (!confirm(`Remove ${email} from the team?`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      const token = await withToken();
+      const { ok, data } = await tgFetch<{ error?: string }>(
+        "/portal/api/teams/members/remove",
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            team_id: selectedTeam.id,
+            user_id: userId,
+          }),
+        },
+      );
+      if (!ok) {
+        setError(data.error || "Remove failed");
+        return;
+      }
+      await openTeam(
+        selectedTeam.id,
+        selectedTeam.name,
+        true,
+        selectedTeam.poolUsd,
+      );
       await loadMe();
     } finally {
       setBusy(false);
@@ -360,7 +479,12 @@ export function PortalApp() {
                   type="button"
                   className="btn-ghost px-2 py-1 text-xs"
                   onClick={() =>
-                    void openTeam(t.id, t.name, t.my_role === "owner")
+                    void openTeam(
+                      t.id,
+                      t.name,
+                      t.my_role === "owner",
+                      t.budget_usd,
+                    )
                   }
                 >
                   Manage
@@ -376,40 +500,102 @@ export function PortalApp() {
               {selectedTeam.name} — members
             </h3>
             {selectedTeam.isOwner ? (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <input
-                  className="rounded-md border border-line bg-ink px-3 py-2 text-sm"
-                  placeholder="member@company.com"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                />
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    className="w-full rounded-md border border-line bg-ink px-3 py-2 text-sm"
-                    value={inviteCap}
-                    onChange={(e) => setInviteCap(e.target.value)}
-                  />
+              <>
+                <div className="mt-3 flex flex-wrap items-end gap-2">
+                  <label className="text-sm">
+                    <span className="mb-1 block font-semibold text-text-dim">
+                      Pool (USD)
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="w-40 rounded-md border border-line bg-ink px-3 py-2 text-sm"
+                      value={poolEdit}
+                      onChange={(e) => setPoolEdit(e.target.value)}
+                    />
+                  </label>
                   <button
                     type="button"
-                    className="rounded-md bg-signal px-3 py-1.5 text-xs font-semibold text-on-signal"
-                    onClick={() => void inviteMember()}
+                    className="rounded-md border border-line px-3 py-2 text-xs font-semibold text-text"
+                    onClick={() => void saveTeamPool()}
                     disabled={busy}
                   >
-                    Invite
+                    Save pool
                   </button>
                 </div>
-              </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <input
+                    className="rounded-md border border-line bg-ink px-3 py-2 text-sm"
+                    placeholder="member@company.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      className="w-full rounded-md border border-line bg-ink px-3 py-2 text-sm"
+                      value={inviteCap}
+                      onChange={(e) => setInviteCap(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="rounded-md bg-signal px-3 py-1.5 text-xs font-semibold text-on-signal"
+                      onClick={() => void inviteMember()}
+                      disabled={busy}
+                    >
+                      Invite
+                    </button>
+                  </div>
+                </div>
+              </>
             ) : null}
             <ul className="mt-3 divide-y divide-line">
               {members.map((m) => (
-                <li key={m.email} className="py-2 text-sm">
-                  {m.email}{" "}
-                  <span className="text-muted">
-                    {m.role} · cap {money(m.cap_usd)} · spent{" "}
-                    {money(m.spent_usd)}
+                <li
+                  key={m.user_id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                >
+                  <span>
+                    {m.email}{" "}
+                    <span className="text-muted">
+                      {m.role} · spent {money(m.spent_usd)}
+                    </span>
                   </span>
+                  {selectedTeam.isOwner && m.role !== "owner" ? (
+                    <span className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        className="w-24 rounded-md border border-line bg-ink px-2 py-1 text-xs"
+                        value={capEdits[m.user_id] ?? String(m.cap_usd)}
+                        onChange={(e) =>
+                          setCapEdits((prev) => ({
+                            ...prev,
+                            [m.user_id]: e.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="btn-ghost px-2 py-1 text-xs"
+                        onClick={() => void saveMemberCap(m.user_id)}
+                        disabled={busy}
+                      >
+                        Save cap
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost px-2 py-1 text-xs text-danger"
+                        onClick={() => void removeMember(m.user_id, m.email)}
+                        disabled={busy}
+                      >
+                        Remove
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="text-muted">cap {money(m.cap_usd)}</span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -438,8 +624,11 @@ export function PortalApp() {
           <Link href="/docs" className="text-signal hover:underline">
             Docs
           </Link>{" "}
-          · Operator console stays on the Go host at{" "}
-          <code className="font-mono">/dashboard</code>.
+          · Operator console at{" "}
+          <Link href="/dashboard" className="text-signal hover:underline">
+            /dashboard
+          </Link>
+          .
         </p>
       </section>
     </div>

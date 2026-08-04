@@ -62,3 +62,91 @@ func TestPortalTeamCreateAndInvite(t *testing.T) {
 		t.Fatalf("member should see team: %s", body)
 	}
 }
+
+func TestPortalTeamBudgetCapRemoveAndReinvite(t *testing.T) {
+	h := newHarness(t, harnessOpts{guardEnabled: true, portalEnabled: true, portalDevLogin: true})
+
+	jar, _ := cookiejar.New(nil)
+	owner := &http.Client{Jar: jar, Transport: h.server.Client().Transport}
+	jar2, _ := cookiejar.New(nil)
+	member := &http.Client{Jar: jar2, Transport: h.server.Client().Transport}
+
+	portalDo(t, owner, http.MethodPost, h.url("/portal/dev/login"), `{"email":"owner2@example.com","name":"Owner"}`)
+	portalDo(t, member, http.MethodPost, h.url("/portal/dev/login"), `{"email":"member2@example.com","name":"Member"}`)
+
+	status, body := portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams"), `{"name":"PoolCo","budget_usd":100}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create=%d %s", status, body)
+	}
+	var team map[string]any
+	_ = json.Unmarshal([]byte(body), &team)
+	teamID, _ := team["id"].(string)
+
+	// Cap above pool rejected.
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members"),
+		`{"team_id":"`+teamID+`","email":"member2@example.com","cap_usd":500}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("cap>pool status=%d %s", status, body)
+	}
+	if !strings.Contains(body, "exceed") {
+		t.Fatalf("expected exceed error: %s", body)
+	}
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members"),
+		`{"team_id":"`+teamID+`","email":"member2@example.com","cap_usd":40}`)
+	if status != http.StatusCreated {
+		t.Fatalf("invite=%d %s", status, body)
+	}
+	var invited map[string]any
+	_ = json.Unmarshal([]byte(body), &invited)
+	memberID, _ := invited["user_id"].(string)
+	if memberID == "" {
+		t.Fatalf("missing member user_id: %s", body)
+	}
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/budget"),
+		`{"team_id":"`+teamID+`","budget_usd":250}`)
+	if status != http.StatusOK {
+		t.Fatalf("budget=%d %s", status, body)
+	}
+	if !strings.Contains(body, `"budget_usd":250`) && !strings.Contains(body, `"budget_usd": 250`) {
+		// JSON encoder may emit 250 without spaces
+		var updated map[string]any
+		_ = json.Unmarshal([]byte(body), &updated)
+		if updated["budget_usd"].(float64) != 250 {
+			t.Fatalf("budget body=%s", body)
+		}
+	}
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members/cap"),
+		`{"team_id":"`+teamID+`","user_id":"`+memberID+`","cap_usd":80}`)
+	if status != http.StatusOK {
+		t.Fatalf("cap=%d %s", status, body)
+	}
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members/remove"),
+		`{"team_id":"`+teamID+`","user_id":"`+memberID+`"}`)
+	if status != http.StatusOK {
+		t.Fatalf("remove=%d %s", status, body)
+	}
+
+	status, body = portalDo(t, member, http.MethodGet, h.url("/portal/api/me"), "")
+	if status != http.StatusOK {
+		t.Fatalf("me after remove=%d %s", status, body)
+	}
+	if strings.Contains(body, teamID) {
+		t.Fatalf("removed member should not see team: %s", body)
+	}
+
+	// Re-invite after soft-remove.
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members"),
+		`{"team_id":"`+teamID+`","email":"member2@example.com","cap_usd":50}`)
+	if status != http.StatusCreated {
+		t.Fatalf("reinvite=%d %s", status, body)
+	}
+
+	status, body = portalDo(t, member, http.MethodGet, h.url("/portal/api/me"), "")
+	if status != http.StatusOK || !strings.Contains(body, teamID) {
+		t.Fatalf("member should see team again: %d %s", status, body)
+	}
+}

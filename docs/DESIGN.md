@@ -72,4 +72,4 @@ Design choices behind TokenGuard. Prefer these invariants when changing code.
 
 **How:** Next.js `web/` owns the Clerk UI at `/portal`. Go owns `/portal/api/*` and verifies Clerk JWTs (`Authorization: Bearer …`). Cookie login (`TOKENGUARD_PORTAL_DEV_LOGIN`) is for the e2e harness only. Teams store a pool + per-member caps; `ReserveBudget` enforces both when the user is on a team.
 
-**Not yet:** Multi-team spend selection header, billing/Stripe for TokenGuard itself.
+**Not yet:** Multi-team spend selection header (`X-TokenGuard-Team-ID`), billing/Stripe for TokenGuard itself.

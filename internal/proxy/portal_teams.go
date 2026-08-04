@@ -133,6 +133,9 @@ func (h *Handler) HandlePortalAddTeamMember(w http.ResponseWriter, r *http.Reque
 		if errors.Is(err, billing.ErrNotTeamOwner) {
 			status = http.StatusForbidden
 		}
+		if errors.Is(err, billing.ErrCapExceedsPool) || errors.Is(err, billing.ErrTeamMemberExists) {
+			status = http.StatusBadRequest
+		}
 		writePortalJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
@@ -163,6 +166,9 @@ func (h *Handler) HandlePortalUpdateMemberCap(w http.ResponseWriter, r *http.Req
 		status := http.StatusBadRequest
 		if errors.Is(err, billing.ErrNotTeamOwner) {
 			status = http.StatusForbidden
+		}
+		if errors.Is(err, billing.ErrCapExceedsPool) {
+			status = http.StatusBadRequest
 		}
 		writePortalJSON(w, status, map[string]string{"error": err.Error()})
 		return

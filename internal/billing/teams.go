@@ -13,6 +13,7 @@ var (
 	ErrNotTeamOwner       = errors.New("not team owner")
 	ErrTeamMemberExists   = errors.New("user is already a team member")
 	ErrTeamMemberNotFound = errors.New("team member not found")
+	ErrCapExceedsPool     = errors.New("member cap cannot exceed team pool budget")
 )
 
 type Team struct {
@@ -183,7 +184,8 @@ func (s *Store) AddTeamMemberByEmail(ctx context.Context, ownerUserID, teamID, e
 	}
 
 	var owner string
-	err := s.db.QueryRowContext(ctx, `SELECT owner_user_id FROM teams WHERE id = ?`, teamID).Scan(&owner)
+	var teamLimit int64
+	err := s.db.QueryRowContext(ctx, `SELECT owner_user_id, limit_microusd FROM teams WHERE id = ?`, teamID).Scan(&owner, &teamLimit)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TeamMember{}, ErrTeamNotFound
 	}
@@ -193,6 +195,9 @@ func (s *Store) AddTeamMemberByEmail(ctx context.Context, ownerUserID, teamID, e
 	if owner != ownerUserID {
 		return TeamMember{}, ErrNotTeamOwner
 	}
+	if capMicroUSD > teamLimit {
+		return TeamMember{}, ErrCapExceedsPool
+	}
 
 	var memberUserID, name string
 	err = s.db.QueryRowContext(ctx, `
@@ -201,6 +206,35 @@ SELECT id, IFNULL(name, '') FROM users WHERE email = ? AND status = 'active'`, e
 		return TeamMember{}, fmt.Errorf("no TokenGuard account for email %s — they must sign in at /portal first", email)
 	}
 	if err != nil {
+		return TeamMember{}, err
+	}
+	if memberUserID == ownerUserID {
+		return TeamMember{}, errors.New("owner is already on the team")
+	}
+
+	// Reactivate a previously removed member, or insert fresh.
+	var existingStatus string
+	err = s.db.QueryRowContext(ctx, `
+SELECT status FROM team_members WHERE team_id = ? AND user_id = ?`, teamID, memberUserID).Scan(&existingStatus)
+	if err == nil {
+		if existingStatus == "active" {
+			return TeamMember{}, ErrTeamMemberExists
+		}
+		_, err = s.db.ExecContext(ctx, `
+UPDATE team_members
+SET status = 'active',
+    role = 'member',
+    cap_microusd = ?,
+    spent_microusd = 0,
+    reserved_microusd = 0,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE team_id = ? AND user_id = ?`, capMicroUSD, teamID, memberUserID)
+		if err != nil {
+			return TeamMember{}, err
+		}
+		return s.getTeamMember(ctx, teamID, memberUserID)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
 		return TeamMember{}, err
 	}
 
@@ -221,7 +255,8 @@ func (s *Store) UpdateTeamMemberCap(ctx context.Context, ownerUserID, teamID, me
 		return TeamMember{}, errors.New("cap cannot be negative")
 	}
 	var owner string
-	err := s.db.QueryRowContext(ctx, `SELECT owner_user_id FROM teams WHERE id = ?`, teamID).Scan(&owner)
+	var teamLimit int64
+	err := s.db.QueryRowContext(ctx, `SELECT owner_user_id, limit_microusd FROM teams WHERE id = ?`, teamID).Scan(&owner, &teamLimit)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TeamMember{}, ErrTeamNotFound
 	}
@@ -230,6 +265,9 @@ func (s *Store) UpdateTeamMemberCap(ctx context.Context, ownerUserID, teamID, me
 	}
 	if owner != ownerUserID {
 		return TeamMember{}, ErrNotTeamOwner
+	}
+	if capMicroUSD > teamLimit {
+		return TeamMember{}, ErrCapExceedsPool
 	}
 	res, err := s.db.ExecContext(ctx, `
 UPDATE team_members
