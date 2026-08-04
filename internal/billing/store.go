@@ -140,6 +140,15 @@ func (s *Store) Migrate(ctx context.Context) error {
 			return fmt.Errorf("execute migration statement %q: %w", statement, err)
 		}
 	}
+	for _, statement := range schemaAlterStatements() {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			// SQLite returns an error when the column already exists.
+			if strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+				continue
+			}
+			return fmt.Errorf("execute alter statement %q: %w", statement, err)
+		}
+	}
 	return nil
 }
 

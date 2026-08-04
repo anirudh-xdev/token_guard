@@ -160,6 +160,8 @@ func main() {
 		}))
 		mux.HandleFunc("/portal/api/teams/members/cap", handler.WithPortalCORS(handler.HandlePortalUpdateMemberCap))
 		mux.HandleFunc("/portal/api/teams/members/remove", handler.WithPortalCORS(handler.HandlePortalRemoveTeamMember))
+		mux.HandleFunc("/portal/api/teams/invites", handler.WithPortalCORS(handler.HandlePortalListPendingInvites))
+		mux.HandleFunc("/portal/api/usage", handler.WithPortalCORS(handler.HandlePortalListUsage))
 		log.Print("product portal APIs enabled; UI prefers TOKENGUARD_PORTAL_APP_URL")
 	} else {
 		mux.HandleFunc("/portal", func(w http.ResponseWriter, r *http.Request) {

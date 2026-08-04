@@ -22,9 +22,12 @@ type AccountStore interface {
 	GetTeamForUser(ctx context.Context, teamID, userID string) (billing.Team, error)
 	UpdateTeamBudget(ctx context.Context, ownerUserID, teamID string, limitMicroUSD int64) (billing.Team, error)
 	AddTeamMemberByEmail(ctx context.Context, ownerUserID, teamID, email string, capMicroUSD int64) (billing.TeamMember, error)
+	AddTeamMemberOrInvite(ctx context.Context, ownerUserID, teamID, email string, capMicroUSD int64) (billing.AddMemberResult, error)
 	UpdateTeamMemberCap(ctx context.Context, ownerUserID, teamID, memberUserID string, capMicroUSD int64) (billing.TeamMember, error)
 	RemoveTeamMember(ctx context.Context, ownerUserID, teamID, memberUserID string) error
 	ListTeamMembers(ctx context.Context, requesterUserID, teamID string) ([]billing.TeamMember, error)
+	ListPendingInvitesForTeam(ctx context.Context, ownerUserID, teamID string) ([]billing.TeamInvite, error)
+	ListPortalUsage(ctx context.Context, userID, teamID string, limit int) ([]billing.UsageEvent, error)
 }
 
 var _ AccountStore = (*billing.Store)(nil)

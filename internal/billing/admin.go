@@ -176,3 +176,87 @@ func (s *Store) ListRecentUsage(ctx context.Context, limit int) ([]UsageEvent, e
 	}
 	return events, nil
 }
+
+// ListPortalUsage returns recent usage for the signed-in user.
+// When teamID is set, owners see all members' usage (any user on that team);
+// members see only their own events (scoped check that they belong to the team).
+func (s *Store) ListPortalUsage(ctx context.Context, userID, teamID string, limit int) ([]UsageEvent, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("billing store is nil")
+	}
+	userID = strings.TrimSpace(userID)
+	teamID = strings.TrimSpace(teamID)
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	if userID == "" {
+		return nil, errors.New("user id is required")
+	}
+
+	if teamID == "" {
+		rows, err := s.db.QueryContext(ctx, `
+SELECT id, user_id, IFNULL(api_key_id, ''), provider, model, IFNULL(session_id, ''),
+       input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status
+FROM usage_events
+WHERE user_id = ?
+ORDER BY created_at DESC
+LIMIT ?`, userID, limit)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		return scanUsageEvents(rows)
+	}
+
+	var role string
+	err := s.db.QueryRowContext(ctx, `
+SELECT role FROM team_members
+WHERE team_id = ? AND user_id = ? AND status = 'active'`, teamID, userID).Scan(&role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrTeamNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var rows *sql.Rows
+	if role == "owner" {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT e.id, e.user_id, IFNULL(e.api_key_id, ''), e.provider, e.model, IFNULL(e.session_id, ''),
+       e.input_tokens, e.output_tokens, e.estimated_cost_microusd, e.actual_cost_microusd, e.status
+FROM usage_events e
+WHERE e.user_id IN (
+  SELECT user_id FROM team_members WHERE team_id = ? AND status = 'active'
+)
+ORDER BY e.created_at DESC
+LIMIT ?`, teamID, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT id, user_id, IFNULL(api_key_id, ''), provider, model, IFNULL(session_id, ''),
+       input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status
+FROM usage_events
+WHERE user_id = ?
+ORDER BY created_at DESC
+LIMIT ?`, userID, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanUsageEvents(rows)
+}
+
+func scanUsageEvents(rows *sql.Rows) ([]UsageEvent, error) {
+	var events []UsageEvent
+	for rows.Next() {
+		var e UsageEvent
+		if err := rows.Scan(
+			&e.ID, &e.UserID, &e.APIKeyID, &e.Provider, &e.Model, &e.SessionID,
+			&e.InputTokens, &e.OutputTokens, &e.EstimatedCostMicroUSD, &e.ActualCostMicroUSD, &e.Status,
+		); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}

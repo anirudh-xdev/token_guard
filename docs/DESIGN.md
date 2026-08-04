@@ -70,6 +70,6 @@ Design choices behind TokenGuard. Prefer these invariants when changing code.
 
 **Why:** Hosted users must not configure Turso/Upstash/admin secret. They sign in, get a personal budget + `tg_` key, and optionally join teams with caps.
 
-**How:** Next.js `web/` owns the Clerk UI at `/portal`. Go owns `/portal/api/*` and verifies Clerk JWTs (`Authorization: Bearer …`). Cookie login (`TOKENGUARD_PORTAL_DEV_LOGIN`) is for the e2e harness only. Teams store a pool + per-member caps; `ReserveBudget` enforces both when the user is on a team.
+**How:** Next.js `web/` owns the Clerk UI at `/portal`. Go owns `/portal/api/*` and verifies Clerk JWTs (`Authorization: Bearer …`). Cookie login (`TOKENGUARD_PORTAL_DEV_LOGIN`) is for the e2e harness only. Teams store a pool + per-member caps; `ReserveBudget` enforces both when the user is on a team. Pending invites land in `team_invites` and auto-accept on `/portal/api/me`. Clients may send `X-TokenGuard-Team-ID` to choose which team pool/cap to charge when a user has multiple memberships.
 
-**Not yet:** Multi-team spend selection header (`X-TokenGuard-Team-ID`), billing/Stripe for TokenGuard itself.
+**Not yet:** Billing/Stripe for TokenGuard itself.
