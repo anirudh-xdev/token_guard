@@ -170,6 +170,7 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	mux.HandleFunc("/v1/status", handler.HandlePublicStatus)
 	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, cfg.DocsAppURL, http.StatusFound)
 	})

@@ -305,13 +305,11 @@ func (h *Handler) setPortalCORS(w http.ResponseWriter, r *http.Request) {
 	if origin == "" {
 		return
 	}
-	for _, allowed := range h.portalCORSOrigins {
-		if origin == allowed {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			return
-		}
+	if h.portalOriginAllowed(origin) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		return
 	}
 	// Harness / local cookie tests may omit CORS allowlist.
 	if h.portalDevLogin && len(h.portalCORSOrigins) == 0 {
@@ -321,17 +319,32 @@ func (h *Handler) setPortalCORS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) portalOriginAllowed(origin string) bool {
+	want := strings.TrimRight(strings.TrimSpace(origin), "/")
+	for _, allowed := range h.portalCORSOrigins {
+		if strings.TrimRight(strings.TrimSpace(allowed), "/") == want {
+			return true
+		}
+	}
+	return false
+}
+
 func setPortalCORSHeaders(w http.ResponseWriter, _ string) {
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Max-Age", "86400")
 }
 
 func (h *Handler) HandlePortalOptions(w http.ResponseWriter, r *http.Request) {
+	// Always attach CORS on preflight so browsers surface API errors instead of a opaque CORS failure.
+	h.setPortalCORS(w, r)
 	if !h.portalEnabled() {
-		http.NotFound(w, r)
+		writePortalJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "Portal is disabled on this API host",
+			"code":  "portal_disabled",
+		})
 		return
 	}
-	h.setPortalCORS(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
