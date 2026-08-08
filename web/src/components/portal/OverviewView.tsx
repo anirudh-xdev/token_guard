@@ -274,6 +274,7 @@ export function OverviewView() {
           <QuickLink href="/portal/integrate">
             {selectedTeam ? "Copy team integration" : "Integrate an app"}
           </QuickLink>
+          <QuickLink href="/portal/faq">Setup FAQ</QuickLink>
         </div>
       </section>
     </>

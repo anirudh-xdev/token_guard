@@ -55,6 +55,7 @@ const navItems = [
   { href: "/portal/keys", label: "API keys" },
   { href: "/portal/teams", label: "Teams" },
   { href: "/portal/integrate", label: "Integrate" },
+  { href: "/portal/faq", label: "FAQ" },
 ];
 
 export function PortalWorkspace({ children }: { children: ReactNode }) {
