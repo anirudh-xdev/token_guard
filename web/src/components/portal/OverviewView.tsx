@@ -4,14 +4,21 @@ import Link from "next/link";
 import { usePortal } from "@/components/portal/PortalWorkspace";
 import { Alert, EmptyState, Skeleton, StatusBadge } from "@/components/ui/PortalUI";
 
-export function formatMicroUSD(value: number) {
-  const usd = value / 1_000_000;
+export function formatUSD(value: number | undefined | null) {
+  const usd = typeof value === "number" && Number.isFinite(value) ? value : 0;
   if (usd > 0 && usd < 0.01) return `$${usd.toFixed(4)}`;
   return `$${usd.toFixed(2)}`;
 }
 
-export function formatNumber(value: number) {
-  return new Intl.NumberFormat().format(value);
+export function formatMicroUSD(value: number | undefined | null) {
+  const micro =
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return formatUSD(micro / 1_000_000);
+}
+
+export function formatNumber(value: number | undefined | null) {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat().format(n);
 }
 
 export function OverviewView() {
@@ -202,7 +209,7 @@ export function OverviewView() {
             {scope.kind === "personal" ? (
               <AttentionRow
                 label="API keys"
-                status={`${me.user.active_key_count} active`}
+                status={`${me.user.active_key_count ?? 0} active`}
               />
             ) : null}
             {scope.role === "owner" ? (
@@ -267,6 +274,7 @@ export function OverviewView() {
           <QuickLink href="/portal/integrate">
             {selectedTeam ? "Copy team integration" : "Integrate an app"}
           </QuickLink>
+          <QuickLink href="/portal/faq">Setup FAQ</QuickLink>
         </div>
       </section>
     </>

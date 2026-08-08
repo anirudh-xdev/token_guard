@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePortal } from "@/components/portal/PortalWorkspace";
-import { formatMicroUSD } from "@/components/portal/OverviewView";
+import { formatUSD } from "@/components/portal/OverviewView";
 import {
   Alert,
   Button,
@@ -11,7 +11,8 @@ import {
   StatusBadge,
 } from "@/components/ui/PortalUI";
 import {
-  tgFetch,
+  asArray,
+  tgPortalFetch,
   type TeamInvite,
   type TeamMember,
 } from "@/lib/tokenguard-api";
@@ -44,25 +45,26 @@ export function TeamsView() {
       setInvites([]);
       return;
     }
-    const token = await getToken();
     const [memberRes, inviteRes] = await Promise.all([
-      tgFetch<{ members?: TeamMember[] }>(
+      tgPortalFetch<{ members?: TeamMember[] }>(
         `/portal/api/teams/members?team_id=${encodeURIComponent(selectedTeam.id)}`,
-        token,
+        getToken,
       ),
-      tgFetch<{ invites?: TeamInvite[] }>(
+      tgPortalFetch<{ invites?: TeamInvite[] }>(
         `/portal/api/teams/invites?team_id=${encodeURIComponent(selectedTeam.id)}`,
-        token,
+        getToken,
       ),
     ]);
     if (!memberRes.ok) throw new Error(memberRes.data.error || "Could not load members");
     if (!inviteRes.ok) throw new Error(inviteRes.data.error || "Could not load invites");
-    const nextMembers = memberRes.data.members || [];
+    const nextMembers = asArray(memberRes.data.members);
     setMembers(nextMembers);
-    setInvites(inviteRes.data.invites || []);
-    setPool(String(selectedTeam.budget_usd));
+    setInvites(asArray(inviteRes.data.invites));
+    setPool(String(selectedTeam.budget_usd ?? 0));
     setCaps(
-      Object.fromEntries(nextMembers.map((member) => [member.user_id, String(member.cap_usd)])),
+      Object.fromEntries(
+        nextMembers.map((member) => [member.user_id, String(member.cap_usd ?? 0)]),
+      ),
     );
   }, [getToken, selectedTeam]);
 
@@ -84,10 +86,9 @@ export function TeamsView() {
     setBusy("create-team");
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch<{ id?: string }>(
+      const { ok, data } = await tgPortalFetch<{ id?: string }>(
         "/portal/api/teams",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({ name: teamName.trim(), budget_usd: budget }),
@@ -115,10 +116,9 @@ export function TeamsView() {
     setBusy("pool");
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch(
+      const { ok, data } = await tgPortalFetch(
         "/portal/api/teams/budget",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({ team_id: selectedTeam.id, budget_usd: value }),
@@ -144,10 +144,9 @@ export function TeamsView() {
     setBusy("invite");
     setError("");
     try {
-      const token = await getToken();
-      const { ok, status, data } = await tgFetch(
+      const { ok, status, data } = await tgPortalFetch(
         "/portal/api/teams/members",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({
@@ -182,10 +181,9 @@ export function TeamsView() {
     setBusy(`cap:${member.user_id}`);
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch(
+      const { ok, data } = await tgPortalFetch(
         "/portal/api/teams/members/cap",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({
@@ -210,10 +208,9 @@ export function TeamsView() {
     setBusy(`remove:${remove.user_id}`);
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch(
+      const { ok, data } = await tgPortalFetch(
         "/portal/api/teams/members/remove",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({ team_id: selectedTeam.id, user_id: remove.user_id }),
@@ -247,14 +244,14 @@ export function TeamsView() {
         <h2 id="assignments-heading" className="font-display text-lg font-semibold">
           My team assignments
         </h2>
-        {me.user.teams.length === 0 ? (
+        {asArray(me.user.teams).length === 0 ? (
           <EmptyState
             title="You are not on a team yet"
             description="Create a team to manage a shared LLM budget, or ask an owner to invite your sign-in email."
           />
         ) : (
           <div className="mt-4 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
-            {me.user.teams.map((team) => (
+            {asArray(me.user.teams).map((team) => (
               <button
                 key={team.id}
                 type="button"
@@ -269,8 +266,8 @@ export function TeamsView() {
                 </span>
                 <span className="mt-3 block text-sm text-muted">
                   {team.my_role === "owner"
-                    ? `${formatMicroUSD(team.spent_usd * 1_000_000)} of ${formatMicroUSD(team.budget_usd * 1_000_000)} pool spent`
-                    : `${formatMicroUSD(team.my_spent_usd * 1_000_000)} of ${formatMicroUSD(team.my_cap_usd * 1_000_000)} allowance spent`}
+                    ? `${formatUSD(team.spent_usd)} of ${formatUSD(team.budget_usd)} pool spent`
+                    : `${formatUSD(team.my_spent_usd)} of ${formatUSD(team.my_cap_usd)} allowance spent`}
                 </span>
               </button>
             ))}
@@ -311,7 +308,10 @@ export function TeamsView() {
               <TeamMetric label="My spend" value={selectedTeam.my_spent_usd} />
               <TeamMetric
                 label="My remaining"
-                value={selectedTeam.my_available_usd ?? selectedTeam.my_cap_usd - selectedTeam.my_spent_usd}
+                value={
+                  selectedTeam.my_available_usd ??
+                  (selectedTeam.my_cap_usd ?? 0) - (selectedTeam.my_spent_usd ?? 0)
+                }
               />
             </dl>
             <Alert tone="info">
@@ -426,7 +426,7 @@ function OwnerTeamPanel(props: {
             {props.invites.map((invite) => (
               <li key={invite.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm">
                 <span>{invite.email}</span>
-                <span className="text-muted">${invite.cap_usd.toFixed(2)} cap · waiting for sign-in</span>
+                <span className="text-muted">{formatUSD(invite.cap_usd)} cap · waiting for sign-in</span>
               </li>
             ))}
           </ul>
@@ -453,10 +453,10 @@ function OwnerTeamPanel(props: {
                   <span className="block text-xs font-normal text-muted">{member.email}</span>
                 </th>
                 <td className="py-3 pr-4"><StatusBadge status={member.role} /></td>
-                <td className="py-3 pr-4 text-right font-mono">${member.spent_usd.toFixed(2)}</td>
+                <td className="py-3 pr-4 text-right font-mono">{formatUSD(member.spent_usd)}</td>
                 <td className="py-3 pr-4">
                   {member.role === "owner" ? (
-                    <span className="text-muted">${member.cap_usd.toFixed(2)}</span>
+                    <span className="text-muted">{formatUSD(member.cap_usd)}</span>
                   ) : (
                     <input
                       aria-label={`Cap for ${member.email}`}
@@ -464,7 +464,7 @@ function OwnerTeamPanel(props: {
                       min="0"
                       step="0.01"
                       className="w-28"
-                      value={props.caps[member.user_id] ?? member.cap_usd}
+                      value={props.caps[member.user_id] ?? String(member.cap_usd ?? 0)}
                       onChange={(event) =>
                         props.setCaps((current) => ({ ...current, [member.user_id]: event.target.value }))
                       }
@@ -515,11 +515,17 @@ function Field({
   );
 }
 
-function TeamMetric({ label, value }: { label: string; value: number }) {
+function TeamMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | undefined | null;
+}) {
   return (
     <div className="border-l-2 border-line pl-4">
       <dt className="text-xs uppercase tracking-[0.08em] text-muted">{label}</dt>
-      <dd className="mt-1 font-mono text-xl">${value.toFixed(2)}</dd>
+      <dd className="mt-1 font-mono text-xl">{formatUSD(value)}</dd>
     </div>
   );
 }

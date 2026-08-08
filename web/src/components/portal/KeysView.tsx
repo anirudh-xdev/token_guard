@@ -9,7 +9,7 @@ import {
   EmptyState,
   StatusBadge,
 } from "@/components/ui/PortalUI";
-import { tgFetch } from "@/lib/tokenguard-api";
+import { tgPortalFetch } from "@/lib/tokenguard-api";
 
 export function KeysView() {
   const { me, getToken, refreshMe, setError, setNotice } = usePortal();
@@ -17,17 +17,18 @@ export function KeysView() {
   const [newKey, setNewKey] = useState("");
   const [copied, setCopied] = useState(false);
   const [revoke, setRevoke] = useState<{ id: string; name: string } | null>(null);
-  const canCreate = me.limits.can_create_key;
+  const keys = me.user.keys ?? [];
+  const canCreate = me.limits?.can_create_key ?? false;
+  const maxKeys = me.limits?.max_keys ?? 0;
 
   async function createKey() {
     setBusy("create");
     setError("");
     setNotice("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch<{ api_key?: string }>(
+      const { ok, data } = await tgPortalFetch<{ api_key?: string }>(
         "/portal/api/keys",
-        token,
+        getToken,
         { method: "POST", body: JSON.stringify({ name: "default" }) },
       );
       if (!ok) throw new Error(data.error || "Could not create key");
@@ -45,10 +46,9 @@ export function KeysView() {
     setBusy(revoke.id);
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch(
+      const { ok, data } = await tgPortalFetch(
         "/portal/api/keys/revoke",
-        token,
+        getToken,
         { method: "POST", body: JSON.stringify({ key_id: revoke.id }) },
       );
       if (!ok) throw new Error(data.error || "Could not revoke key");
@@ -88,8 +88,8 @@ export function KeysView() {
 
       {!canCreate ? (
         <Alert tone="warning">
-          You reached the limit of {me.limits.max_keys} active keys. Revoke an
-          unused key before creating another.
+          You reached the limit of {maxKeys} active keys. Revoke an unused key
+          before creating another.
         </Alert>
       ) : null}
 
@@ -105,7 +105,7 @@ export function KeysView() {
         </Alert>
       ) : null}
 
-      {me.user.keys.length === 0 ? (
+      {keys.length === 0 ? (
         <EmptyState
           title="Create your first API key"
           description="Your application sends this key to TokenGuard. Provider credentials remain separate and are forwarded upstream."
@@ -121,21 +121,25 @@ export function KeysView() {
             Your keys
           </h2>
           <ul className="mt-4 divide-y divide-line border-y border-line">
-            {me.user.keys.map((key) => (
+            {keys.map((key) => (
               <li key={key.id} className="flex flex-wrap items-center justify-between gap-4 py-4">
                 <div>
-                  <p className="font-semibold text-text">{key.name}</p>
+                  <p className="font-semibold text-text">{key.name || "API key"}</p>
                   <p className="mt-1 font-mono text-xs text-muted">
-                    {key.key_prefix}… · created{" "}
-                    {new Date(key.created_at).toLocaleDateString()}
+                    {key.key_prefix || "tg_"}… · created{" "}
+                    {key.created_at
+                      ? new Date(key.created_at).toLocaleDateString()
+                      : "—"}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <StatusBadge status={key.status} />
+                  <StatusBadge status={key.status || "unknown"} />
                   {key.status === "active" ? (
                     <Button
                       variant="danger"
-                      onClick={() => setRevoke({ id: key.id, name: key.name })}
+                      onClick={() =>
+                        setRevoke({ id: key.id, name: key.name || "API key" })
+                      }
                     >
                       Revoke
                     </Button>

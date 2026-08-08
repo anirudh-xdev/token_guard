@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { usePortal } from "@/components/portal/PortalWorkspace";
 import { Alert, Button } from "@/components/ui/PortalUI";
@@ -16,23 +17,52 @@ export function IntegrateView() {
     : "";
   const snippet =
     language === "curl"
-      ? `curl "${apiBaseUrl()}/v1/chat/completions" \\
+      ? `# Use the SAME session id for every call in one agent run.
+# Change it only when the user starts a brand-new run.
+SESSION_ID="agent-run-1"
+
+curl "${apiBaseUrl()}/v1/chat/completions" \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $PROVIDER_API_KEY" \\
   -H "X-TokenGuard-API-Key: $TOKENGUARD_API_KEY" \\
-${teamLine}  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'`
-      : `const response = await fetch("${apiBaseUrl()}/v1/chat/completions", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": \`Bearer \${process.env.PROVIDER_API_KEY}\`,
-    "X-TokenGuard-API-Key": process.env.TOKENGUARD_API_KEY,
-${teamLine}  },
-  body: JSON.stringify({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: "Hello" }],
-  }),
-});`;
+  -H "X-TokenGuard-Session-ID: $SESSION_ID" \\
+${teamLine}  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
+
+# Later steps in the same run keep $SESSION_ID unchanged.
+# Next independent run: SESSION_ID="agent-run-2" (or a new UUID).`
+      : `// WHERE to create the id:
+// at the start of an agent run / chat thread in YOUR app
+// (handler, job, LangGraph thread, OpenAI Agents run, etc.)
+async function runAgentTask(userGoal) {
+  // Create ONCE for this run. Store it in a local variable,
+  // request context, or your agent-state object.
+  const sessionId = \`agent-run-\${crypto.randomUUID()}\`;
+
+  // Helper that always reuses that same sessionId.
+  async function callModel(messages) {
+    return fetch("${apiBaseUrl()}/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": \`Bearer \${process.env.PROVIDER_API_KEY}\`,
+        "X-TokenGuard-API-Key": process.env.TOKENGUARD_API_KEY,
+        "X-TokenGuard-Session-ID": sessionId, // same value every step
+${teamLine}      },
+      body: JSON.stringify({ model: "gpt-4o-mini", messages }),
+    });
+  }
+
+  // Step 1 and Step 2 share sessionId → TokenGuard can detect loops.
+  await callModel([{ role: "user", content: userGoal }]);
+  await callModel([
+    { role: "user", content: userGoal },
+    { role: "assistant", content: "..." },
+    { role: "user", content: "continue" },
+  ]);
+}
+
+// New user task / new conversation → call runAgentTask() again.
+// That creates a NEW sessionId automatically.`;
 
   async function copy() {
     await navigator.clipboard.writeText(snippet);
@@ -51,7 +81,7 @@ ${teamLine}  },
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
           Replace the provider base URL, keep the provider credential, and add
-          your personal TokenGuard key.
+          your personal TokenGuard key. For agents, also send a session id.
         </p>
       </header>
 
@@ -72,7 +102,7 @@ ${teamLine}  },
         <h2 id="steps-heading" className="font-display text-lg font-semibold">
           Before you send a request
         </h2>
-        <ol className="mt-4 grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-3">
+        <ol className="mt-4 grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-4">
           <Step number="1" title="Create a key">
             Generate a TokenGuard API key on the API keys page.
           </Step>
@@ -81,6 +111,10 @@ ${teamLine}  },
           </Step>
           <Step number="3" title="Call the proxy">
             Use TokenGuard’s base URL and a model in the configured pricing catalog.
+          </Step>
+          <Step number="4" title="Add a session id">
+            For agents, send <code>X-TokenGuard-Session-ID</code> so loop
+            protection can trip before spend runs away.
           </Step>
         </ol>
       </section>
@@ -122,6 +156,20 @@ ${teamLine}  },
           <li>TokenGuard strips its internal headers before forwarding upstream.</li>
           <li>Unknown models are blocked; add pricing through the operator catalog first.</li>
         </ul>
+      </section>
+
+      <section aria-labelledby="faq-link-heading" className="border-t border-line pt-6">
+        <h2 id="faq-link-heading" className="font-display text-lg font-semibold">
+          Still stuck?
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-muted">
+          See the plain-language{" "}
+          <Link href="/portal/faq" className="font-semibold text-signal underline">
+            FAQ
+          </Link>{" "}
+          for session id, team id, provider keys, 402/409 errors, and a
+          non-developer first checklist.
+        </p>
       </section>
     </>
   );

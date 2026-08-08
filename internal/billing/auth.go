@@ -256,6 +256,9 @@ WHERE u.id = ? AND u.status = 'active'`, userID).Scan(
 	if err != nil {
 		return AccountView{}, err
 	}
+	if keys == nil {
+		keys = []APIKeyMeta{}
+	}
 	view.Keys = keys
 	for _, k := range keys {
 		if k.Status == "active" {
