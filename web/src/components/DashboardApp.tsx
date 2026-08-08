@@ -10,7 +10,6 @@ import {
   type MgmtUser,
 } from "@/lib/tokenguard-api";
 
-const SECRET_KEY = "tokenguard_admin_secret";
 type View = "start" | "integrate" | "users" | "pricing" | "usage";
 type SnippetLang = "curl" | "node" | "python";
 
@@ -36,7 +35,6 @@ export function DashboardApp() {
   const [unlocked, setUnlocked] = useState(false);
   const [admin, setAdmin] = useState("");
   const [adminInput, setAdminInput] = useState("");
-  const [remember, setRemember] = useState(true);
   const [unlockErr, setUnlockErr] = useState("");
   const [globalErr, setGlobalErr] = useState("");
   const [view, setView] = useState<View>("start");
@@ -120,7 +118,7 @@ export function DashboardApp() {
   }, []);
 
   const unlock = useCallback(
-    async (secret: string, persist: boolean) => {
+    async (secret: string) => {
       setUnlockErr("");
       if (secret.length < 16) {
         setUnlockErr("Admin secret must be at least 16 characters.");
@@ -129,8 +127,6 @@ export function DashboardApp() {
       try {
         const res = await mgmtFetch<{ users?: MgmtUser[] }>("/mgmt/users", secret);
         if (!res.ok) throw new Error(res.data.error || `HTTP ${res.status}`);
-        if (persist) localStorage.setItem(SECRET_KEY, secret);
-        else localStorage.removeItem(SECRET_KEY);
         setAdmin(secret);
         setUnlocked(true);
         await Promise.all([loadInfo(), loadDashboardData(secret), checkHealth()]);
@@ -144,26 +140,18 @@ export function DashboardApp() {
   );
 
   useEffect(() => {
-    const saved = localStorage.getItem(SECRET_KEY) || "";
-    if (!saved) return;
-    setAdminInput(saved);
-    void unlock(saved, true);
-    // Auto-unlock once on mount from remembered secret.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (unlocked && view === "pricing" && admin) {
+    if (!unlocked || view !== "pricing" || !admin) return;
+    const timer = window.setTimeout(() => {
       void loadPricing(admin).catch((e) =>
         setGlobalErr(e instanceof Error ? e.message : String(e)),
       );
-    }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [unlocked, view, admin, loadPricing]);
 
   function lockConsole() {
     setAdmin("");
     setUnlocked(false);
-    localStorage.removeItem(SECRET_KEY);
     setAdminInput("");
     setView("start");
   }
@@ -366,30 +354,18 @@ res = client.chat.completions.create(
               value={adminInput}
               onChange={(e) => setAdminInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void unlock(adminInput.trim(), remember);
+                if (e.key === "Enter") void unlock(adminInput.trim());
               }}
             />
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                fontWeight: 500,
-                marginBottom: "1rem",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-              />
-              Remember on this device
-            </label>
+            <p className="kv" style={{ marginBottom: "1rem" }}>
+              The admin secret is kept in memory only and is cleared when this
+              tab is refreshed or closed. Do not use this console on a shared device.
+            </p>
             <button
               className="btn"
               type="button"
               style={{ width: "100%" }}
-              onClick={() => void unlock(adminInput.trim(), remember)}
+              onClick={() => void unlock(adminInput.trim())}
             >
               Unlock console
             </button>

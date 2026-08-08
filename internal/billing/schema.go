@@ -41,6 +41,7 @@ func schemaStatements() []string {
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   api_key_id TEXT REFERENCES api_keys(id) ON DELETE SET NULL,
+  team_id TEXT,
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
   session_id TEXT,
@@ -140,5 +141,8 @@ func schemaAlterStatements() []string {
 	return []string{
 		`ALTER TABLE team_members ADD COLUMN invited_by_user_id TEXT`,
 		`ALTER TABLE team_members ADD COLUMN invited_at TEXT`,
+		`ALTER TABLE usage_events ADD COLUMN team_id TEXT`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_events_team_created
+  ON usage_events(team_id, created_at)`,
 	}
 }

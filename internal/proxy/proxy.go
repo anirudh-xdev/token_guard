@@ -131,7 +131,12 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 			pr.SetURL(route.Upstream)
 			pr.Out.Host = route.Upstream.Host
 			pr.SetXForwarded()
+			// Clients often send Accept-Encoding: gzip. If we forward it, upstream may
+			// return a compressed body that Go's Transport will NOT auto-decode
+			// (it only decodes gzip it requested itself). That breaks usage parsing.
+			pr.Out.Header.Del("Accept-Encoding")
 		},
+		ModifyResponse: captureProviderUsageModifyResponse,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("proxy upstream error path=%s error=%v", r.URL.Path, err)
 			w.Header().Set("Content-Type", "application/json")
@@ -215,9 +220,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		stripTokenGuardHeaders(r)
 	}
 
+	ctx, usageCap := withProviderUsageCapture(r.Context())
+	r = r.WithContext(ctx)
+
 	streamWriter := newSSECountingResponseWriter(w, h.tokenEncoder, h.tokenizerModel, route.Name, h.tokenObserver)
 	h.proxy.ServeHTTP(streamWriter, r)
 	streamEvent := streamWriter.Finish()
+	usageCap.applyTo(&streamEvent)
+	log.Printf("usage settle provider=%s captured=%s settled_in=%d settled_out=%d status=%d",
+		route.Name, usageCap.headerValue(), streamEvent.InputTokens, streamEvent.TotalTokens, streamWriter.StatusCode())
 
 	if guard != nil {
 		h.logCompletedUsageAsync(guard, streamEvent, streamWriter.StatusCode())
@@ -250,7 +261,10 @@ func (h *Handler) Target() *url.URL {
 
 func newTransport() *http.Transport {
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy: http.ProxyFromEnvironment,
+		// Do not ask upstream for gzip. If a client Accept-Encoding were forwarded,
+		// Transport would leave the body compressed and usage parsing would fail.
+		DisableCompression:    true,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          256,
 		MaxIdleConnsPerHost:   64,

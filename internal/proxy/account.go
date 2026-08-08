@@ -28,6 +28,7 @@ type AccountStore interface {
 	ListTeamMembers(ctx context.Context, requesterUserID, teamID string) ([]billing.TeamMember, error)
 	ListPendingInvitesForTeam(ctx context.Context, ownerUserID, teamID string) ([]billing.TeamInvite, error)
 	ListPortalUsage(ctx context.Context, userID, teamID string, limit int) ([]billing.UsageEvent, error)
+	GetPortalOverview(ctx context.Context, userID, teamID string, days int) (billing.PortalOverview, error)
 }
 
 var _ AccountStore = (*billing.Store)(nil)

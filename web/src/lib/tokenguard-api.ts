@@ -48,6 +48,7 @@ export type AccountView = {
 export type TeamMember = {
   user_id: string;
   email: string;
+  name?: string;
   role: string;
   cap_usd: number;
   spent_usd: number;
@@ -69,12 +70,56 @@ export type TeamInvite = {
 export type PortalUsageEvent = {
   id: string;
   user_id: string;
+  team_id?: string;
   provider: string;
   model: string;
   input_tokens: number;
   output_tokens: number;
   actual_cost_microusd: number;
   status: string;
+  created_at?: string;
+};
+
+export type PortalOverview = {
+  scope: {
+    kind: "personal" | "team";
+    id?: string;
+    name: string;
+    role: "personal" | "owner" | "member";
+    owner?: string;
+    days: number;
+  };
+  budget: {
+    limit_microusd: number;
+    spent_microusd: number;
+    reserved_microusd: number;
+    available_microusd: number;
+  };
+  totals: {
+    requests: number;
+    completed: number;
+    blocked: number;
+    provider_errors: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost_microusd: number;
+  };
+  daily: Array<{
+    date: string;
+    requests: number;
+    blocked: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost_microusd: number;
+  }>;
+  breakdown: Array<{
+    provider: string;
+    model: string;
+    requests: number;
+    tokens: number;
+    cost_microusd: number;
+  }>;
+  pending_invite_count?: number;
 };
 
 export type MeResponse = {

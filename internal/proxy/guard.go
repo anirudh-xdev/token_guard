@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -91,6 +92,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 			h.logUsageAsync(billing.UsageEvent{
 				UserID:                budgetResult.apiKey.UserID,
 				APIKeyID:              budgetResult.apiKey.ID,
+				TeamID:                spendTeamID,
 				Provider:              analysis.Provider,
 				Model:                 modelOrUnknown(analysis.Model),
 				SessionID:             analysis.SessionID,
@@ -113,6 +115,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		h.logUsageAsync(billing.UsageEvent{
 			UserID:                budgetResult.apiKey.UserID,
 			APIKeyID:              budgetResult.apiKey.ID,
+			TeamID:                spendTeamID,
 			Provider:              analysis.Provider,
 			Model:                 modelOrUnknown(analysis.Model),
 			SessionID:             analysis.SessionID,
@@ -123,6 +126,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		return nil, false
 	}
 	if !loopResult.skipped && loopResult.result.Tripped {
+		w.Header().Set("X-TokenGuard-Loop-Check", fmt.Sprintf("tripped;count=%d;threshold=%d", loopResult.result.Count, loopResult.result.Threshold))
 		h.releaseReservationAsync(budgetResult.apiKey.UserID, budgetResult.reserved, spendTeamID)
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"error": "TokenGuard: Infinite agent loop detected. Circuit breaker tripped to save budget.",
@@ -131,6 +135,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		h.logUsageAsync(billing.UsageEvent{
 			UserID:                budgetResult.apiKey.UserID,
 			APIKeyID:              budgetResult.apiKey.ID,
+			TeamID:                spendTeamID,
 			Provider:              analysis.Provider,
 			Model:                 modelOrUnknown(analysis.Model),
 			SessionID:             analysis.SessionID,
@@ -146,12 +151,15 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 			"error":                   "TokenGuard: budget exceeded",
 			"code":                    "budget_exceeded",
 			"available_microusd":      budgetResult.budget.AvailableMicroUSD(),
+			"spent_microusd":          budgetResult.budget.SpentMicroUSD,
+			"limit_microusd":          budgetResult.budget.LimitMicroUSD,
 			"estimated_cost_microusd": budgetResult.estimate.EstimatedTotalCostMicroUSD,
 			"model":                   modelOrUnknown(analysis.Model),
 		})
 		h.logUsageAsync(billing.UsageEvent{
 			UserID:                budgetResult.apiKey.UserID,
 			APIKeyID:              budgetResult.apiKey.ID,
+			TeamID:                spendTeamID,
 			Provider:              analysis.Provider,
 			Model:                 modelOrUnknown(analysis.Model),
 			SessionID:             analysis.SessionID,
@@ -160,6 +168,18 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 			Status:                "blocked_budget",
 		})
 		return nil, false
+	}
+
+	if loopResult.skipped {
+		reason := "no_session"
+		if analysis.SessionID != "" && len(analysis.SemanticPayload) == 0 {
+			reason = "empty_payload"
+		} else if h.circuitBreaker == nil {
+			reason = "breaker_disabled"
+		}
+		w.Header().Set("X-TokenGuard-Loop-Check", "skipped;reason="+reason)
+	} else {
+		w.Header().Set("X-TokenGuard-Loop-Check", fmt.Sprintf("ok;count=%d;threshold=%d", loopResult.result.Count, loopResult.result.Threshold))
 	}
 
 	stripTokenGuardHeaders(r)
@@ -174,8 +194,18 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 	}, true
 }
 
-func (h *Handler) checkBudget(ctx context.Context, apiKeySecret string, analysis requestAnalysis) budgetCheckResult {
-	apiKey, err := h.budgetStore.LookupAPIKey(ctx, apiKeySecret)
+func (h *Handler) checkBudget(parent context.Context, apiKeySecret string, analysis requestAnalysis) budgetCheckResult {
+	// Detach from the inbound request cancel and give Turso a generous deadline.
+	// Flaky/slow Turso HTTP was surfacing as budget_unavailable on longer prompts.
+	dbCtx, cancel := billing.WithTimeout(parent, h.dbOpTimeout())
+	defer cancel()
+
+	var apiKey billing.APIKey
+	err := billing.Retry(dbCtx, 3, func(ctx context.Context) error {
+		var lookupErr error
+		apiKey, lookupErr = h.budgetStore.LookupAPIKey(ctx, apiKeySecret)
+		return lookupErr
+	})
 	if err != nil {
 		return budgetCheckResult{err: err}
 	}
@@ -189,27 +219,46 @@ func (h *Handler) checkBudget(ctx context.Context, apiKeySecret string, analysis
 		return result
 	}
 
-	budget, err := h.budgetStore.GetUserBudget(ctx, apiKey.UserID)
+	var budget billing.Budget
+	err = billing.Retry(dbCtx, 3, func(ctx context.Context) error {
+		var getErr error
+		budget, getErr = h.budgetStore.GetUserBudget(ctx, apiKey.UserID)
+		return getErr
+	})
 	if err != nil {
 		return budgetCheckResult{apiKey: apiKey, err: err}
 	}
 	result.budget = budget
+	spendTeamID := billing.SpendTeamIDFromContext(parent)
 
-	estimate, _, err := h.pricing.CanAffordProvider(
+	estimate, err := h.pricing.EstimateProvider(
 		analysis.Provider,
 		analysis.Model,
 		analysis.InputTokens,
 		analysis.MaxOutputTokens,
-		budget.AvailableMicroUSD(),
 	)
 	if err != nil {
-		result.estimate = estimate
 		result.err = err
 		return result
 	}
-
-	reservedBudget, reserved, err := h.budgetStore.ReserveBudget(ctx, apiKey.UserID, estimate.EstimatedTotalCostMicroUSD)
 	result.estimate = estimate
+
+	// Personal budget (default): hard-stop when nothing left, even if estimate is $0.
+	if spendTeamID == "" {
+		available := budget.AvailableMicroUSD()
+		if available <= 0 || estimate.EstimatedTotalCostMicroUSD > available {
+			result.affordable = false
+			return result
+		}
+	}
+
+	var reservedBudget billing.Budget
+	var reserved bool
+	err = billing.Retry(dbCtx, 3, func(ctx context.Context) error {
+		var reserveErr error
+		reservedBudget, reserved, reserveErr = h.budgetStore.ReserveBudget(ctx, apiKey.UserID, estimate.EstimatedTotalCostMicroUSD)
+		return reserveErr
+	})
 	result.budget = reservedBudget
 	result.affordable = reserved
 	if reserved {
@@ -217,6 +266,18 @@ func (h *Handler) checkBudget(ctx context.Context, apiKeySecret string, analysis
 	}
 	result.err = err
 	return result
+}
+
+func (h *Handler) dbOpTimeout() time.Duration {
+	type timedStore interface {
+		OpTimeout() time.Duration
+	}
+	if s, ok := h.budgetStore.(timedStore); ok {
+		if d := s.OpTimeout(); d > 0 {
+			return d
+		}
+	}
+	return 15 * time.Second
 }
 
 func (h *Handler) checkLoop(ctx context.Context, analysis requestAnalysis) loopCheckResult {
@@ -254,7 +315,17 @@ func (h *Handler) handleBudgetError(w http.ResponseWriter, err error) {
 			"error": "TokenGuard: model pricing not configured",
 			"code":  "pricing_not_configured",
 		})
+	case errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, context.Canceled) ||
+		strings.Contains(strings.ToLower(err.Error()), "deadline exceeded") ||
+		strings.Contains(strings.ToLower(err.Error()), "timeout"):
+		log.Printf("budget check timeout: %v", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "TokenGuard: budget database timed out (Turso unreachable or slow). Retry; check TURSO_* and network.",
+			"code":  "budget_timeout",
+		})
 	default:
+		log.Printf("budget check unavailable: %v", err)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "TokenGuard: budget check unavailable",
 			"code":  "budget_unavailable",
@@ -287,6 +358,7 @@ func (h *Handler) logCompletedUsageAsync(guard *guardContext, streamEvent Stream
 	h.settleUsageAsync(billing.UsageEvent{
 		UserID:                guard.apiKey.UserID,
 		APIKeyID:              guard.apiKey.ID,
+		TeamID:                guard.spendTeamID,
 		Provider:              guard.analysis.Provider,
 		Model:                 modelOrUnknown(guard.analysis.Model),
 		SessionID:             guard.analysis.SessionID,

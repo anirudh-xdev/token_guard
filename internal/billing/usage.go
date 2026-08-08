@@ -50,37 +50,37 @@ func (s *Store) ReserveBudget(ctx context.Context, userID string, amountMicroUSD
 	if amountMicroUSD < 0 {
 		return Budget{}, false, errors.New("reservation amount cannot be negative")
 	}
-	if amountMicroUSD == 0 {
-		budget, err := s.GetUserBudget(ctx, userID)
-		return budget, true, err
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Budget{}, false, fmt.Errorf("begin reservation tx: %w", err)
 	}
 	defer tx.Rollback()
 
+	// Always resolve team scope first so an invalid X-TokenGuard-Team-ID fails
+	// even when the estimated reservation amount is $0.
 	scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, userID)
 	if err != nil {
 		return Budget{}, false, err
+	}
+	if amountMicroUSD == 0 {
+		budget := budgetFromTeamScope(userID, scope)
+		if !onTeam {
+			budget, err = scanBudget(ctx, tx, userID)
+			if err != nil {
+				return Budget{}, false, err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return Budget{}, false, err
+		}
+		return budget, true, nil
 	}
 
 	if onTeam {
 		memberAvail := scope.MemberCap - scope.MemberSpent - scope.MemberReserved
 		teamAvail := scope.TeamLimit - scope.TeamSpent - scope.TeamReserved
 		if memberAvail < amountMicroUSD || teamAvail < amountMicroUSD {
-			budget, err := scanBudget(ctx, tx, userID)
-			if err != nil && !errors.Is(err, ErrBudgetNotFound) {
-				return Budget{}, false, err
-			}
-			// Surface remaining as the tighter of personal view / member remaining for 402 UX.
-			if budget.UserID == "" {
-				budget.UserID = userID
-			}
-			budget.LimitMicroUSD = scope.MemberCap
-			budget.SpentMicroUSD = scope.MemberSpent
-			budget.ReservedMicroUSD = scope.MemberReserved
+			budget := budgetFromTeamScope(userID, scope)
 			if err := tx.Commit(); err != nil {
 				return Budget{}, false, err
 			}
@@ -100,18 +100,8 @@ SET reserved_microusd = reserved_microusd + ?,
 WHERE id = ?`, amountMicroUSD, scope.TeamID); err != nil {
 			return Budget{}, false, fmt.Errorf("reserve team pool: %w", err)
 		}
-		// Keep personal budget row in sync for dashboards that still show user_budgets.
-		_, _ = tx.ExecContext(ctx, `
-UPDATE user_budgets
-SET reserved_microusd = reserved_microusd + ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE user_id = ?
-  AND (limit_microusd - spent_microusd - reserved_microusd) >= ?`, amountMicroUSD, userID, amountMicroUSD)
-
-		budget, err := scanBudget(ctx, tx, userID)
-		if err != nil {
-			return Budget{}, false, err
-		}
+		budget := budgetFromTeamScope(userID, scope)
+		budget.ReservedMicroUSD += amountMicroUSD
 		if err := tx.Commit(); err != nil {
 			return Budget{}, false, fmt.Errorf("commit reservation tx: %w", err)
 		}
@@ -161,6 +151,7 @@ type UsageEvent struct {
 	ID                    string `json:"id"`
 	UserID                string `json:"user_id"`
 	APIKeyID              string `json:"api_key_id"`
+	TeamID                string `json:"team_id,omitempty"`
 	Provider              string `json:"provider"`
 	Model                 string `json:"model"`
 	SessionID             string `json:"session_id"`
@@ -170,6 +161,7 @@ type UsageEvent struct {
 	EstimatedCostMicroUSD int64  `json:"estimated_cost_microusd"`
 	ActualCostMicroUSD    int64  `json:"actual_cost_microusd"`
 	Status                string `json:"status"`
+	CreatedAt             string `json:"created_at,omitempty"`
 }
 
 func HashAPIKey(apiKey string) string {
@@ -259,14 +251,6 @@ func (s *Store) ReleaseReservation(ctx context.Context, userID string, reservedM
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `
-UPDATE user_budgets
-SET reserved_microusd = MAX(0, reserved_microusd - ?),
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE user_id = ?`, reservedMicroUSD, userID); err != nil {
-		return fmt.Errorf("release reservation: %w", err)
-	}
-
 	scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, userID)
 	if err != nil {
 		return err
@@ -286,6 +270,14 @@ SET reserved_microusd = MAX(0, reserved_microusd - ?),
 WHERE id = ?`, reservedMicroUSD, scope.TeamID); err != nil {
 			return fmt.Errorf("release team reservation: %w", err)
 		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE user_budgets
+SET reserved_microusd = MAX(0, reserved_microusd - ?),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE user_id = ?`, reservedMicroUSD, userID); err != nil {
+			return fmt.Errorf("release reservation: %w", err)
+		}
 	}
 	return tx.Commit()
 }
@@ -304,6 +296,13 @@ func (s *Store) recordUsage(ctx context.Context, event UsageEvent, reservedMicro
 	if event.Provider == "" {
 		event.Provider = "openai"
 	}
+	contextTeamID := SpendTeamIDFromContext(ctx)
+	event.TeamID = strings.TrimSpace(event.TeamID)
+	if event.TeamID == "" {
+		event.TeamID = contextTeamID
+	} else if contextTeamID != "" && event.TeamID != contextTeamID {
+		return errors.New("usage event team does not match spend context")
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -313,12 +312,13 @@ func (s *Store) recordUsage(ctx context.Context, event UsageEvent, reservedMicro
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO usage_events (
-  id, user_id, api_key_id, provider, model, session_id, request_id,
+  id, user_id, api_key_id, team_id, provider, model, session_id, request_id,
   input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status
-) VALUES (?, ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)`,
 		event.ID,
 		event.UserID,
 		event.APIKeyID,
+		event.TeamID,
 		event.Provider,
 		event.Model,
 		event.SessionID,
@@ -346,14 +346,6 @@ WHERE id = ?`, event.APIKeyID); err != nil {
 		if event.Status == "completed" && event.ActualCostMicroUSD > 0 {
 			spend = event.ActualCostMicroUSD
 		}
-		if _, err := tx.ExecContext(ctx, `
-UPDATE user_budgets
-SET spent_microusd = spent_microusd + ?,
-    reserved_microusd = MAX(0, reserved_microusd - ?),
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE user_id = ?`, spend, reservedMicroUSD, event.UserID); err != nil {
-			return fmt.Errorf("settle reserved budget: %w", err)
-		}
 		scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, event.UserID)
 		if err != nil {
 			return err
@@ -375,15 +367,17 @@ SET spent_microusd = spent_microusd + ?,
 WHERE id = ?`, spend, reservedMicroUSD, scope.TeamID); err != nil {
 				return fmt.Errorf("settle team spend: %w", err)
 			}
-		}
-	} else if event.Status == "completed" && event.ActualCostMicroUSD > 0 {
-		if _, err := tx.ExecContext(ctx, `
+		} else {
+			if _, err := tx.ExecContext(ctx, `
 UPDATE user_budgets
 SET spent_microusd = spent_microusd + ?,
+    reserved_microusd = MAX(0, reserved_microusd - ?),
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE user_id = ?`, event.ActualCostMicroUSD, event.UserID); err != nil {
-			return fmt.Errorf("update user budget spend: %w", err)
+WHERE user_id = ?`, spend, reservedMicroUSD, event.UserID); err != nil {
+				return fmt.Errorf("settle reserved budget: %w", err)
+			}
 		}
+	} else if event.Status == "completed" && event.ActualCostMicroUSD > 0 {
 		scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, event.UserID)
 		if err != nil {
 			return err
@@ -403,6 +397,14 @@ SET spent_microusd = spent_microusd + ?,
 WHERE id = ?`, event.ActualCostMicroUSD, scope.TeamID); err != nil {
 				return fmt.Errorf("update team spend: %w", err)
 			}
+		} else {
+			if _, err := tx.ExecContext(ctx, `
+UPDATE user_budgets
+SET spent_microusd = spent_microusd + ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE user_id = ?`, event.ActualCostMicroUSD, event.UserID); err != nil {
+				return fmt.Errorf("update user budget spend: %w", err)
+			}
 		}
 	}
 
@@ -410,6 +412,15 @@ WHERE id = ?`, event.ActualCostMicroUSD, scope.TeamID); err != nil {
 		return fmt.Errorf("commit usage tx: %w", err)
 	}
 	return nil
+}
+
+func budgetFromTeamScope(userID string, scope teamSpendScope) Budget {
+	return Budget{
+		UserID:           userID,
+		LimitMicroUSD:    scope.MemberCap,
+		SpentMicroUSD:    scope.MemberSpent,
+		ReservedMicroUSD: scope.MemberReserved,
+	}
 }
 
 type budgetScanner interface {

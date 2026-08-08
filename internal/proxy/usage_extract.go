@@ -67,30 +67,29 @@ type usagePayload struct {
 }
 
 func (c *sseTokenCounter) processProviderUsage(raw []byte) {
-	usage, ok := extractUsage(raw)
-	if !ok {
-		// Only fall back to response-text counting for non-SSE JSON bodies.
-		// SSE deltas are already counted via extractStreamText in processEvent.
-		if c.seenStream {
-			return
+	usage, ok := extractUsageLoose(raw)
+	if ok {
+		c.hasProviderUsage = true
+		if usage.InputTokens > 0 {
+			c.inputTokens = usage.InputTokens
 		}
+		if usage.OutputTokens > 0 {
+			c.totalTokens = usage.OutputTokens
+		}
+		if usage.CostUSD > 0 {
+			c.costMicroUSD = models.USDToMicroUSD(usage.CostUSD)
+			c.hasProviderCost = true
+		}
+	}
+	// Some gateways omit completion_tokens or send 0 while still returning message
+	// content. For non-SSE JSON, count response text as a fallback.
+	if c.totalTokens == 0 && !c.seenStream && c.encoder != nil && !c.partialJSON {
 		for _, text := range extractResponseText(raw) {
-			if text == "" || c.encoder == nil {
+			if text == "" {
 				continue
 			}
 			c.totalTokens += int64(c.encoder.Count(text))
 		}
-		return
-	}
-	if usage.InputTokens > 0 {
-		c.inputTokens = usage.InputTokens
-	}
-	if usage.OutputTokens > 0 {
-		c.totalTokens = usage.OutputTokens
-	}
-	if usage.CostUSD > 0 {
-		c.costMicroUSD = models.USDToMicroUSD(usage.CostUSD)
-		c.hasProviderCost = true
 	}
 }
 

@@ -121,7 +121,18 @@ func (w *sseCountingResponseWriter) shouldCaptureJSON() bool {
 		return false
 	}
 	contentType := strings.ToLower(w.Header().Get("Content-Type"))
-	return strings.Contains(contentType, "application/json") || strings.Contains(contentType, "+json")
+	if strings.Contains(contentType, eventStreamContentType) {
+		return false
+	}
+	// Gateways sometimes omit Content-Type or use text/plain for chat JSON.
+	if contentType == "" ||
+		strings.Contains(contentType, "application/json") ||
+		strings.Contains(contentType, "+json") ||
+		strings.Contains(contentType, "text/plain") ||
+		strings.Contains(contentType, "application/octet-stream") {
+		return true
+	}
+	return false
 }
 
 type sseTokenCounter struct {
@@ -139,13 +150,15 @@ type sseTokenCounter struct {
 	totalTextBytes  int64
 	costMicroUSD    int64
 	hasProviderCost bool
-	seenStream      bool
-	seenJSON        bool
-	truncatedJSON   bool
-	finished        bool
+	seenStream       bool
+	seenJSON         bool
+	partialJSON      bool
+	hasProviderUsage bool
+	finished         bool
 }
 
-const maxUsageJSONBytes = 1 << 20
+// Keep a rolling window large enough that usage at the end of big chat JSON still fits.
+const maxUsageJSONBytes = maxProviderUsageBodyBytes
 
 func newSSETokenCounter(encoder tokenEncoder, model, provider string, observer StreamTokenObserver) *sseTokenCounter {
 	return &sseTokenCounter{
@@ -189,7 +202,7 @@ func (c *sseTokenCounter) Finish() StreamTokenEvent {
 	if len(c.eventData) > 0 {
 		c.processEvent()
 	}
-	if c.seenJSON && !c.truncatedJSON {
+	if c.seenJSON {
 		c.processProviderUsage(c.jsonBody)
 	}
 
@@ -199,7 +212,7 @@ func (c *sseTokenCounter) Finish() StreamTokenEvent {
 		InputTokens:     c.inputTokens,
 		TotalTextBytes:  c.totalTextBytes,
 		Done:            true,
-		ProviderUsage:   c.seenJSON || c.hasProviderCost,
+		ProviderUsage:   c.hasProviderUsage || c.seenJSON || c.hasProviderCost,
 		CostMicroUSD:    c.costMicroUSD,
 		HasProviderCost: c.hasProviderCost,
 	}
@@ -210,16 +223,15 @@ func (c *sseTokenCounter) Finish() StreamTokenEvent {
 }
 
 func (c *sseTokenCounter) CaptureJSON(p []byte) {
-	if c == nil || c.finished || len(p) == 0 || c.truncatedJSON {
+	if c == nil || c.finished || len(p) == 0 {
 		return
 	}
 	c.seenJSON = true
-	if len(c.jsonBody)+len(p) > maxUsageJSONBytes {
-		c.truncatedJSON = true
-		c.jsonBody = nil
-		return
-	}
 	c.jsonBody = append(c.jsonBody, p...)
+	if len(c.jsonBody) > maxUsageJSONBytes {
+		c.jsonBody = append([]byte(nil), c.jsonBody[len(c.jsonBody)-maxUsageJSONBytes:]...)
+		c.partialJSON = true
+	}
 }
 
 func (c *sseTokenCounter) processLine(line []byte) {
@@ -250,7 +262,21 @@ func (c *sseTokenCounter) processEvent() {
 		return
 	}
 
-	c.processProviderUsage(data)
+	usage, hasUsage := extractUsageLoose(data)
+	if hasUsage {
+		c.processProviderUsage(data)
+	}
+	// Prefer provider completion_tokens on this chunk; do not also tiktoken-count deltas.
+	if hasUsage && usage.OutputTokens > 0 {
+		if c.observer != nil {
+			c.observer(StreamTokenEvent{
+				Model:       c.model,
+				TotalTokens: c.totalTokens,
+				InputTokens: c.inputTokens,
+			})
+		}
+		return
+	}
 
 	for _, text := range extractStreamText(data) {
 		if text == "" {

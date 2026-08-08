@@ -39,14 +39,14 @@ type harnessOpts struct {
 }
 
 type harness struct {
-	t          *testing.T
-	server     *httptest.Server
-	store      *memoryStore
-	pricing    *models.PricingEngine
-	admin      string
-	apiKey     string
-	userID     string
-	events     chan billing.UsageEvent
+	t       *testing.T
+	server  *httptest.Server
+	store   *memoryStore
+	pricing *models.PricingEngine
+	admin   string
+	apiKey  string
+	userID  string
+	events  chan billing.UsageEvent
 }
 
 func fixturePath(name string) string {
@@ -120,9 +120,9 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 	}
 
 	cfg := proxy.Config{
-		ListenAddr:             ":0",
-		UpstreamURL:            openaiURL,
-		DefaultProvider:        "openai",
+		ListenAddr:      ":0",
+		UpstreamURL:     openaiURL,
+		DefaultProvider: "openai",
 		ProviderRoutes: map[string]string{
 			"openai":     openaiURL,
 			"anthropic":  anthropicURL,
@@ -207,6 +207,7 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		mux.HandleFunc("/portal/api/teams/members/remove", handler.HandlePortalRemoveTeamMember)
 		mux.HandleFunc("/portal/api/teams/invites", handler.HandlePortalListPendingInvites)
 		mux.HandleFunc("/portal/api/usage", handler.HandlePortalListUsage)
+		mux.HandleFunc("/portal/api/overview", handler.HandlePortalOverview)
 	}
 	if opts.mgmtEnabled {
 		mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
@@ -336,17 +337,17 @@ func (h *harness) doJSON(method, path string, body any, headers map[string]strin
 
 func (h *harness) adminHeaders() map[string]string {
 	return map[string]string{
-		"Content-Type":                "application/json",
-		"X-TokenGuard-Admin-Secret":   h.admin,
+		"Content-Type":              "application/json",
+		"X-TokenGuard-Admin-Secret": h.admin,
 	}
 }
 
 func (h *harness) proxyHeaders(extra map[string]string) map[string]string {
 	hdr := map[string]string{
-		"Content-Type":           "application/json",
-		"Authorization":          "Bearer sk-test",
-		"X-TokenGuard-API-Key":   h.apiKey,
-		"X-TokenGuard-Provider":  "openai",
+		"Content-Type":          "application/json",
+		"Authorization":         "Bearer sk-test",
+		"X-TokenGuard-API-Key":  h.apiKey,
+		"X-TokenGuard-Provider": "openai",
 	}
 	for k, v := range extra {
 		hdr[k] = v
@@ -405,7 +406,7 @@ type memoryStore struct {
 }
 
 type memTeam struct {
-	id, name, owner string
+	id, name, owner        string
 	limit, spent, reserved int64
 }
 
@@ -491,9 +492,10 @@ func (s *memoryStore) ReserveBudget(ctx context.Context, userID string, amountMi
 		t := s.teams[scope.teamID]
 		t.reserved += amountMicroUSD
 		s.teams[scope.teamID] = t
-		b.ReservedMicroUSD += amountMicroUSD
-		s.budgets[userID] = b
-		return b, true, nil
+		return billing.Budget{
+			UserID: userID, LimitMicroUSD: scope.cap,
+			SpentMicroUSD: scope.spent, ReservedMicroUSD: scope.reserved + amountMicroUSD,
+		}, true, nil
 	}
 	if amountMicroUSD > b.AvailableMicroUSD() {
 		return b, false, nil
@@ -504,47 +506,25 @@ func (s *memoryStore) ReserveBudget(ctx context.Context, userID string, amountMi
 }
 
 type memTeamScope struct {
-	teamID, userID                       string
-	cap, spent, reserved                 int64
-	teamLimit, teamSpent, teamReserved   int64
+	teamID, userID                     string
+	cap, spent, reserved               int64
+	teamLimit, teamSpent, teamReserved int64
 }
 
 func (s *memoryStore) teamScopeLocked(userID, preferred string) (memTeamScope, bool, error) {
-	if preferred != "" {
-		m, ok := s.members[preferred+"|"+userID]
-		if !ok || m.status != "active" {
-			return memTeamScope{}, false, fmt.Errorf("%w: not an active member of team %s", billing.ErrTeamNotFound, preferred)
-		}
-		t := s.teams[preferred]
-		return memTeamScope{
-			teamID: preferred, userID: userID,
-			cap: m.cap, spent: m.spent, reserved: m.reserved,
-			teamLimit: t.limit, teamSpent: t.spent, teamReserved: t.reserved,
-		}, true, nil
-	}
-	var best *memTeamScope
-	for _, m := range s.members {
-		if m.userID != userID || m.status != "active" {
-			continue
-		}
-		t := s.teams[m.teamID]
-		scope := memTeamScope{
-			teamID: m.teamID, userID: userID,
-			cap: m.cap, spent: m.spent, reserved: m.reserved,
-			teamLimit: t.limit, teamSpent: t.spent, teamReserved: t.reserved,
-		}
-		if best == nil || m.role == "owner" {
-			cp := scope
-			best = &cp
-			if m.role == "owner" {
-				break
-			}
-		}
-	}
-	if best == nil {
+	if preferred == "" {
 		return memTeamScope{}, false, nil
 	}
-	return *best, true, nil
+	m, ok := s.members[preferred+"|"+userID]
+	if !ok || m.status != "active" {
+		return memTeamScope{}, false, fmt.Errorf("%w: not an active member of team %s", billing.ErrTeamNotFound, preferred)
+	}
+	t := s.teams[preferred]
+	return memTeamScope{
+		teamID: preferred, userID: userID,
+		cap: m.cap, spent: m.spent, reserved: m.reserved,
+		teamLimit: t.limit, teamSpent: t.spent, teamReserved: t.reserved,
+	}, true, nil
 }
 
 func (s *memoryStore) RecordUsage(ctx context.Context, event billing.UsageEvent) error {
@@ -560,7 +540,14 @@ func (s *memoryStore) RecordUsage(ctx context.Context, event billing.UsageEvent)
 
 func (s *memoryStore) SettleReservedUsage(ctx context.Context, event billing.UsageEvent, reservedMicroUSD int64) error {
 	s.mu.Lock()
-	if b, ok := s.budgets[event.UserID]; ok {
+	preferred := billing.SpendTeamIDFromContext(ctx)
+	scope, onTeam, scopeErr := s.teamScopeLocked(event.UserID, preferred)
+	if scopeErr != nil {
+		s.mu.Unlock()
+		return scopeErr
+	}
+	if !onTeam {
+		b := s.budgets[event.UserID]
 		b.ReservedMicroUSD -= reservedMicroUSD
 		if b.ReservedMicroUSD < 0 {
 			b.ReservedMicroUSD = 0
@@ -575,8 +562,7 @@ func (s *memoryStore) SettleReservedUsage(ctx context.Context, event billing.Usa
 			s.users[event.UserID] = u
 		}
 	}
-	preferred := billing.SpendTeamIDFromContext(ctx)
-	if scope, onTeam, err := s.teamScopeLocked(event.UserID, preferred); err == nil && onTeam {
+	if onTeam {
 		m := s.members[scope.teamID+"|"+event.UserID]
 		m.reserved -= reservedMicroUSD
 		if m.reserved < 0 {
@@ -608,17 +594,12 @@ func (s *memoryStore) SettleReservedUsage(ctx context.Context, event billing.Usa
 func (s *memoryStore) ReleaseReservation(ctx context.Context, userID string, reservedMicroUSD int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	b, ok := s.budgets[userID]
-	if !ok {
-		return billing.ErrBudgetNotFound
-	}
-	b.ReservedMicroUSD -= reservedMicroUSD
-	if b.ReservedMicroUSD < 0 {
-		b.ReservedMicroUSD = 0
-	}
-	s.budgets[userID] = b
 	preferred := billing.SpendTeamIDFromContext(ctx)
-	if scope, onTeam, err := s.teamScopeLocked(userID, preferred); err == nil && onTeam {
+	scope, onTeam, err := s.teamScopeLocked(userID, preferred)
+	if err != nil {
+		return err
+	}
+	if onTeam {
 		m := s.members[scope.teamID+"|"+userID]
 		m.reserved -= reservedMicroUSD
 		if m.reserved < 0 {
@@ -631,6 +612,16 @@ func (s *memoryStore) ReleaseReservation(ctx context.Context, userID string, res
 			t.reserved = 0
 		}
 		s.teams[scope.teamID] = t
+	} else {
+		b, ok := s.budgets[userID]
+		if !ok {
+			return billing.ErrBudgetNotFound
+		}
+		b.ReservedMicroUSD -= reservedMicroUSD
+		if b.ReservedMicroUSD < 0 {
+			b.ReservedMicroUSD = 0
+		}
+		s.budgets[userID] = b
 	}
 	return nil
 }
@@ -1000,10 +991,10 @@ func (s *memoryStore) teamsForUserLocked(userID string) []billing.Team {
 			OwnerEmail: owner.Email, OwnerName: owner.Name,
 			LimitMicroUSD: t.limit, SpentMicroUSD: t.spent, ReservedMicroUSD: t.reserved,
 			AvailableMicroUSD: avail,
-			BudgetUSD: float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+			BudgetUSD:         float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
 			MyRole: m.role, MyCapMicroUSD: m.cap, MySpentMicroUSD: m.spent,
 			MyCapUSD: float64(m.cap) / 1e6, MySpentUSD: float64(m.spent) / 1e6,
-			MyAvailableUSD: float64(myAvail) / 1e6,
+			MyAvailableUSD:  float64(myAvail) / 1e6,
 			InvitedByUserID: m.invitedBy, InvitedByEmail: inviter.Email, InvitedByName: inviter.Name,
 			InvitedAt: m.invitedAt,
 		})
@@ -1042,7 +1033,7 @@ func (s *memoryStore) UpdateTeamBudget(ctx context.Context, ownerUserID, teamID 
 		ID: t.id, Name: t.name, OwnerUserID: t.owner,
 		LimitMicroUSD: t.limit, SpentMicroUSD: t.spent, ReservedMicroUSD: t.reserved,
 		AvailableMicroUSD: avail,
-		BudgetUSD: float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+		BudgetUSD:         float64(t.limit) / 1e6, SpentUSD: float64(t.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
 		MyRole: "owner", MyCapMicroUSD: m.cap, MyCapUSD: float64(m.cap) / 1e6,
 	}, nil
 }
@@ -1166,7 +1157,7 @@ func (s *memoryStore) ListPortalUsage(ctx context.Context, userID, teamID string
 	var filtered []billing.UsageEvent
 	if teamID == "" {
 		for _, e := range s.usage {
-			if e.UserID == userID {
+			if e.UserID == userID && e.TeamID == "" {
 				filtered = append(filtered, e)
 			}
 		}
@@ -1175,18 +1166,8 @@ func (s *memoryStore) ListPortalUsage(ctx context.Context, userID, teamID string
 		if !ok || m.status != "active" {
 			return nil, billing.ErrTeamNotFound
 		}
-		memberIDs := map[string]bool{}
-		if m.role == "owner" {
-			for _, mm := range s.members {
-				if mm.teamID == teamID && mm.status == "active" {
-					memberIDs[mm.userID] = true
-				}
-			}
-		} else {
-			memberIDs[userID] = true
-		}
 		for _, e := range s.usage {
-			if memberIDs[e.UserID] {
+			if e.TeamID == teamID && (m.role == "owner" || e.UserID == userID) {
 				filtered = append(filtered, e)
 			}
 		}
@@ -1199,6 +1180,90 @@ func (s *memoryStore) ListPortalUsage(ctx context.Context, userID, teamID string
 		filtered[i], filtered[j] = filtered[j], filtered[i]
 	}
 	return filtered, nil
+}
+
+func (s *memoryStore) GetPortalOverview(ctx context.Context, userID, teamID string, days int) (billing.PortalOverview, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if days < 7 || days > 90 {
+		days = 30
+	}
+	out := billing.PortalOverview{
+		Scope: billing.PortalScope{Kind: "personal", Name: "Personal", Role: "personal", Days: days},
+		Daily: []billing.PortalDailyUsage{}, Breakdown: []billing.PortalUsageBreakdown{},
+	}
+	if teamID == "" {
+		b, ok := s.budgets[userID]
+		if !ok {
+			return billing.PortalOverview{}, billing.ErrBudgetNotFound
+		}
+		out.Budget = memoryBudgetSummary(b.LimitMicroUSD, b.SpentMicroUSD, b.ReservedMicroUSD)
+	} else {
+		m, ok := s.members[teamID+"|"+userID]
+		if !ok || m.status != "active" {
+			return billing.PortalOverview{}, billing.ErrTeamNotFound
+		}
+		t := s.teams[teamID]
+		owner := s.users[t.owner]
+		out.Scope = billing.PortalScope{Kind: "team", ID: teamID, Name: t.name, Role: m.role, Owner: owner.Name, Days: days}
+		if m.role == "owner" {
+			out.Budget = memoryBudgetSummary(t.limit, t.spent, t.reserved)
+			for _, invite := range s.invites {
+				if invite.teamID == teamID && invite.status == "pending" {
+					out.PendingInviteCount++
+				}
+			}
+		} else {
+			out.Budget = memoryBudgetSummary(m.cap, m.spent, m.reserved)
+		}
+	}
+	breakdowns := map[string]*billing.PortalUsageBreakdown{}
+	for _, event := range s.usage {
+		visible := event.UserID == userID && event.TeamID == ""
+		if teamID != "" {
+			member := s.members[teamID+"|"+userID]
+			visible = event.TeamID == teamID && (member.role == "owner" || event.UserID == userID)
+		}
+		if !visible {
+			continue
+		}
+		out.Totals.Requests++
+		out.Totals.InputTokens += event.InputTokens
+		out.Totals.OutputTokens += event.OutputTokens
+		out.Totals.CostMicroUSD += event.ActualCostMicroUSD
+		switch event.Status {
+		case "completed":
+			out.Totals.Completed++
+		case "blocked_budget", "blocked_loop":
+			out.Totals.Blocked++
+		case "provider_error":
+			out.Totals.ProviderErrors++
+		}
+		key := event.Provider + "\x00" + event.Model
+		item := breakdowns[key]
+		if item == nil {
+			item = &billing.PortalUsageBreakdown{Provider: event.Provider, Model: event.Model}
+			breakdowns[key] = item
+		}
+		item.Requests++
+		item.Tokens += event.InputTokens + event.OutputTokens
+		item.CostMicroUSD += event.ActualCostMicroUSD
+	}
+	for _, item := range breakdowns {
+		out.Breakdown = append(out.Breakdown, *item)
+	}
+	return out, nil
+}
+
+func memoryBudgetSummary(limit, spent, reserved int64) billing.PortalBudgetSummary {
+	available := limit - spent - reserved
+	if available < 0 {
+		available = 0
+	}
+	return billing.PortalBudgetSummary{
+		LimitMicroUSD: limit, SpentMicroUSD: spent,
+		ReservedMicroUSD: reserved, AvailableMicroUSD: available,
+	}
 }
 
 func (s *memoryStore) UpdateTeamMemberCap(ctx context.Context, ownerUserID, teamID, memberUserID string, capMicroUSD int64) (billing.TeamMember, error) {
@@ -1251,6 +1316,8 @@ func (s *memoryStore) ListTeamMembers(ctx context.Context, requesterUserID, team
 	defer s.mu.Unlock()
 	if m, ok := s.members[teamID+"|"+requesterUserID]; !ok || m.status != "active" {
 		return nil, billing.ErrTeamNotFound
+	} else if m.role != "owner" {
+		return nil, billing.ErrNotTeamOwner
 	}
 	var out []billing.TeamMember
 	for _, m := range s.members {
@@ -1268,7 +1335,7 @@ func (s *memoryStore) ListTeamMembers(ctx context.Context, requesterUserID, team
 			CapMicroUSD: m.cap, SpentMicroUSD: m.spent, ReservedMicroUSD: m.reserved,
 			InvitedByEmail: inviter.Email, InvitedAt: m.invitedAt,
 			AvailableMicroUSD: avail,
-			CapUSD: float64(m.cap) / 1e6, SpentUSD: float64(m.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
+			CapUSD:            float64(m.cap) / 1e6, SpentUSD: float64(m.spent) / 1e6, AvailableUSD: float64(avail) / 1e6,
 		})
 	}
 	return out, nil
