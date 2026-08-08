@@ -18,11 +18,12 @@ HTTP surface of TokenGuard. Full integrator walkthrough: [HOW_TO_USE.md](../HOW_
 | `POST` | `/portal/api/keys/revoke` | Clerk Bearer or session | Revoke own key by `key_id` |
 | `GET` / `POST` | `/portal/api/teams` | Clerk Bearer or session | List / create teams |
 | `POST` | `/portal/api/teams/budget` | Owner | Set team pool USD |
-| `GET` / `POST` | `/portal/api/teams/members` | Member / owner | List members (`?team_id=`) / invite by email + `cap_usd` (202 if pending invite) |
+| `GET` / `POST` | `/portal/api/teams/members` | Owner | List members (`?team_id=`) / invite by email + `cap_usd` (202 if pending invite) |
 | `GET` | `/portal/api/teams/invites` | Owner | Pending invites (`?team_id=`) |
 | `POST` | `/portal/api/teams/members/cap` | Owner | Update member cap |
 | `POST` | `/portal/api/teams/members/remove` | Owner | Remove member |
-| `GET` | `/portal/api/usage` | Signed-in | Recent usage; optional `?team_id=` (owner sees team-wide) |
+| `GET` | `/portal/api/usage` | Signed-in | Exact scoped usage: personal when no `team_id`; team-wide for owner; requester-only for member |
+| `GET` | `/portal/api/overview` | Signed-in | Bounded 7–90 day scoped aggregates; optional `?team_id=&days=30` |
 | `POST` | `/mgmt/provision` | `X-TokenGuard-Admin-Secret` | Create user + `tg_` API key; optional `budget_usd` / `limit_microusd` |
 | `PATCH` / `POST` | `/mgmt/budget` | `X-TokenGuard-Admin-Secret` | Set/extend user budget; optional `reset_spent` |
 | `GET` | `/mgmt/users` | `X-TokenGuard-Admin-Secret` | List users and budgets |
@@ -103,6 +104,12 @@ Self-serve path for hosted TokenGuard (users never configure Turso/Upstash):
 Default personal budget when a portal account is created: **`TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD`** (default **$5**).
 
 Portal APIs authenticate with `Authorization: Bearer <Clerk session JWT>`. Cookie sessions are for `TOKENGUARD_PORTAL_DEV_LOGIN` / e2e harness only. CORS allowlist: `TOKENGUARD_PORTAL_CORS_ORIGINS`.
+
+Personal and team ledgers are isolated. Requests are personal unless the app
+sends a valid `X-TokenGuard-Team-ID`; team-charged usage records that exact
+`team_id` and changes only the team pool/member cap. Usage rows created before
+team attribution was introduced remain unassigned (`team_id = NULL`) because
+historical attribution cannot be reconstructed safely.
 
 Operator `/dashboard` + admin secret remain for support, pricing, and budget overrides.
 

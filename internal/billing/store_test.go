@@ -8,6 +8,27 @@ import (
 	"testing"
 )
 
+func TestSchemaIncludesTeamUsageAttributionMigration(t *testing.T) {
+	var createUsage, alterUsage, teamIndex bool
+	for _, statement := range schemaStatements() {
+		if strings.Contains(statement, "CREATE TABLE IF NOT EXISTS usage_events") &&
+			strings.Contains(statement, "team_id TEXT") {
+			createUsage = true
+		}
+	}
+	for _, statement := range schemaAlterStatements() {
+		switch {
+		case strings.Contains(statement, "ALTER TABLE usage_events ADD COLUMN team_id"):
+			alterUsage = true
+		case strings.Contains(statement, "idx_usage_events_team_created"):
+			teamIndex = true
+		}
+	}
+	if !createUsage || !alterUsage || !teamIndex {
+		t.Fatalf("team usage schema incomplete: create=%v alter=%v index=%v", createUsage, alterUsage, teamIndex)
+	}
+}
+
 func TestBuildDatabaseURLSetsEscapedAuthTokenOnce(t *testing.T) {
 	got, err := BuildDatabaseURL("libsql://example.turso.io?authToken=old&authToken=older&foo=bar", "tok+/= value")
 	if err != nil {

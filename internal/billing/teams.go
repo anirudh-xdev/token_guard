@@ -102,9 +102,9 @@ type teamSpendScope struct {
 }
 
 type AddMemberResult struct {
-	Member       *TeamMember `json:"member,omitempty"`
-	Invite       *TeamInvite `json:"invite,omitempty"`
-	PendingInvite bool       `json:"pending_invite"`
+	Member        *TeamMember `json:"member,omitempty"`
+	Invite        *TeamInvite `json:"invite,omitempty"`
+	PendingInvite bool        `json:"pending_invite"`
 }
 
 func (s *Store) CreateTeam(ctx context.Context, ownerUserID, name string, limitMicroUSD int64) (Team, error) {
@@ -439,6 +439,9 @@ SELECT role FROM team_members WHERE team_id = ? AND user_id = ? AND status = 'ac
 	}
 	if err != nil {
 		return nil, err
+	}
+	if role != "owner" {
+		return nil, ErrNotTeamOwner
 	}
 
 	rows, err := s.db.QueryContext(ctx, `

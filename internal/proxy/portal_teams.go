@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"tokenguard/internal/billing"
@@ -204,6 +205,40 @@ func (h *Handler) HandlePortalListUsage(w http.ResponseWriter, r *http.Request) 
 	writePortalJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
+func (h *Handler) HandlePortalOverview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	userID, ok := h.requirePortalUser(w, r)
+	if !ok {
+		return
+	}
+	teamID := strings.TrimSpace(r.URL.Query().Get("team_id"))
+	days := 30
+	if raw := strings.TrimSpace(r.URL.Query().Get("days")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 7 || parsed > 90 {
+			writePortalJSON(w, http.StatusBadRequest, map[string]string{"error": "days must be between 7 and 90"})
+			return
+		}
+		days = parsed
+	}
+	overview, err := h.accountStore.GetPortalOverview(r.Context(), userID, teamID, days)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, billing.ErrTeamNotFound) || errors.Is(err, billing.ErrNotTeamOwner) {
+			status = http.StatusForbidden
+		}
+		if errors.Is(err, billing.ErrBudgetNotFound) {
+			status = http.StatusNotFound
+		}
+		writePortalJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writePortalJSON(w, http.StatusOK, overview)
+}
+
 func (h *Handler) HandlePortalUpdateMemberCap(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodPatch {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -284,7 +319,7 @@ func (h *Handler) HandlePortalListTeamMembers(w http.ResponseWriter, r *http.Req
 	members, err := h.accountStore.ListTeamMembers(r.Context(), userID, teamID)
 	if err != nil {
 		status := http.StatusBadRequest
-		if errors.Is(err, billing.ErrTeamNotFound) {
+		if errors.Is(err, billing.ErrTeamNotFound) || errors.Is(err, billing.ErrNotTeamOwner) {
 			status = http.StatusForbidden
 		}
 		writePortalJSON(w, status, map[string]string{"error": err.Error()})

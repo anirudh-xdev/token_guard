@@ -6,6 +6,8 @@ import (
 	"net/http/cookiejar"
 	"strings"
 	"testing"
+
+	"tokenguard/internal/billing"
 )
 
 func TestPortalTeamCreateAndInvite(t *testing.T) {
@@ -270,5 +272,84 @@ func TestPortalTeamIDHeaderSelectsSpend(t *testing.T) {
 	status, body = portalDo(t, member, http.MethodGet, h.url("/portal/api/usage"), "")
 	if status != http.StatusOK {
 		t.Fatalf("usage=%d %s", status, body)
+	}
+	var personalUsage struct {
+		Events []billing.UsageEvent `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(body), &personalUsage); err != nil {
+		t.Fatalf("decode personal usage: %v", err)
+	}
+	if len(personalUsage.Events) != 0 {
+		t.Fatalf("personal usage included team events: %#v", personalUsage.Events)
+	}
+
+	status, body = portalDo(t, member, http.MethodGet, h.url("/portal/api/usage?team_id="+teamAID), "")
+	if status != http.StatusOK {
+		t.Fatalf("team usage=%d %s", status, body)
+	}
+	var teamUsage struct {
+		Events []billing.UsageEvent `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(body), &teamUsage); err != nil {
+		t.Fatalf("decode team usage: %v", err)
+	}
+	if len(teamUsage.Events) != 1 || teamUsage.Events[0].TeamID != teamAID {
+		t.Fatalf("team usage attribution = %#v, want one event for %s", teamUsage.Events, teamAID)
+	}
+
+	status, body = portalDo(t, member, http.MethodGet, h.url("/portal/api/me"), "")
+	if status != http.StatusOK {
+		t.Fatalf("member me=%d %s", status, body)
+	}
+	var me struct {
+		User struct {
+			UserID        string `json:"user_id"`
+			SpentMicroUSD int64  `json:"spent_microusd"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal([]byte(body), &me); err != nil {
+		t.Fatalf("decode member me: %v", err)
+	}
+	if me.User.SpentMicroUSD != 0 {
+		t.Fatalf("personal spent = %d after team call, want 0", me.User.SpentMicroUSD)
+	}
+
+	status, _ = portalDo(t, member, http.MethodGet, h.url("/portal/api/teams/members?team_id="+teamAID), "")
+	if status != http.StatusForbidden {
+		t.Fatalf("member roster status=%d, want 403", status)
+	}
+	for name, requestBody := range map[string]string{
+		"budget": `{"team_id":"` + teamAID + `","budget_usd":99}`,
+		"invite": `{"team_id":"` + teamAID + `","email":"other@example.com","cap_usd":1}`,
+		"cap":    `{"team_id":"` + teamAID + `","user_id":"` + me.User.UserID + `","cap_usd":1}`,
+		"remove": `{"team_id":"` + teamAID + `","user_id":"` + me.User.UserID + `"}`,
+	} {
+		path := map[string]string{
+			"budget": "/portal/api/teams/budget",
+			"invite": "/portal/api/teams/members",
+			"cap":    "/portal/api/teams/members/cap",
+			"remove": "/portal/api/teams/members/remove",
+		}[name]
+		status, _ = portalDo(t, member, http.MethodPost, h.url(path), requestBody)
+		if status != http.StatusForbidden {
+			t.Fatalf("member %s status=%d, want 403", name, status)
+		}
+	}
+
+	status, body = portalDo(t, owner, http.MethodGet, h.url("/portal/api/usage?team_id="+teamAID), "")
+	if status != http.StatusOK || !strings.Contains(body, `"team_id":"`+teamAID+`"`) {
+		t.Fatalf("owner team usage=%d %s", status, body)
+	}
+
+	status, body = portalDo(t, member, http.MethodGet, h.url("/portal/api/overview?team_id="+teamAID+"&days=30"), "")
+	if status != http.StatusOK {
+		t.Fatalf("member overview=%d %s", status, body)
+	}
+	var overview billing.PortalOverview
+	if err := json.Unmarshal([]byte(body), &overview); err != nil {
+		t.Fatalf("decode overview: %v", err)
+	}
+	if overview.Scope.Role != "member" || overview.Totals.Requests != 1 {
+		t.Fatalf("member overview = %#v, want member with one request", overview)
 	}
 }

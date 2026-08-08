@@ -92,6 +92,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 			h.logUsageAsync(billing.UsageEvent{
 				UserID:                budgetResult.apiKey.UserID,
 				APIKeyID:              budgetResult.apiKey.ID,
+				TeamID:                spendTeamID,
 				Provider:              analysis.Provider,
 				Model:                 modelOrUnknown(analysis.Model),
 				SessionID:             analysis.SessionID,
@@ -114,6 +115,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		h.logUsageAsync(billing.UsageEvent{
 			UserID:                budgetResult.apiKey.UserID,
 			APIKeyID:              budgetResult.apiKey.ID,
+			TeamID:                spendTeamID,
 			Provider:              analysis.Provider,
 			Model:                 modelOrUnknown(analysis.Model),
 			SessionID:             analysis.SessionID,
@@ -133,6 +135,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		h.logUsageAsync(billing.UsageEvent{
 			UserID:                budgetResult.apiKey.UserID,
 			APIKeyID:              budgetResult.apiKey.ID,
+			TeamID:                spendTeamID,
 			Provider:              analysis.Provider,
 			Model:                 modelOrUnknown(analysis.Model),
 			SessionID:             analysis.SessionID,
@@ -156,6 +159,7 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 		h.logUsageAsync(billing.UsageEvent{
 			UserID:                budgetResult.apiKey.UserID,
 			APIKeyID:              budgetResult.apiKey.ID,
+			TeamID:                spendTeamID,
 			Provider:              analysis.Provider,
 			Model:                 modelOrUnknown(analysis.Model),
 			SessionID:             analysis.SessionID,
@@ -354,6 +358,7 @@ func (h *Handler) logCompletedUsageAsync(guard *guardContext, streamEvent Stream
 	h.settleUsageAsync(billing.UsageEvent{
 		UserID:                guard.apiKey.UserID,
 		APIKeyID:              guard.apiKey.ID,
+		TeamID:                guard.spendTeamID,
 		Provider:              guard.analysis.Provider,
 		Model:                 modelOrUnknown(guard.analysis.Model),
 		SessionID:             guard.analysis.SessionID,
