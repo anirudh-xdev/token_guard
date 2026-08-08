@@ -1,0 +1,102 @@
+# Deploy TokenGuard (Go API) to Render after tests pass.
+#
+# Secrets (repo → Settings → Secrets and variables → Actions):
+#   RENDER_DEPLOY_HOOK_URL  — Render Dashboard → tokenguard service → Settings → Deploy Hook
+#   RENDER_HEALTH_URL       — optional, e.g. https://token-guard.onrender.com/healthz
+#
+# Tip: turn off Render "Auto-Deploy" if you want this workflow to be the only deployer.
+
+name: Deploy to Render
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - "web/**"
+      - "docs/**"
+      - "**/*.md"
+      - ".cursor/**"
+  pull_request:
+    branches: [main, master]
+    paths-ignore:
+      - "web/**"
+      - "docs/**"
+      - "**/*.md"
+      - ".cursor/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-render-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Verify Docker build
+        if: github.event_name != 'pull_request'
+        run: docker build -t tokenguard:ci .
+
+  deploy:
+    name: Deploy
+    needs: test
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy hook
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "::error::Missing secret RENDER_DEPLOY_HOOK_URL"
+            echo "Add it from Render → Service → Settings → Deploy Hook"
+            exit 1
+          fi
+          # Pin this commit so Render deploys the SHA that just passed CI.
+          url="${DEPLOY_HOOK_URL}"
+          if [[ "$url" == *"?"* ]]; then
+            url="${url}&ref=${GITHUB_SHA}"
+          else
+            url="${url}?ref=${GITHUB_SHA}"
+          fi
+          echo "Triggering Render deploy for ${GITHUB_SHA}"
+          curl --fail --silent --show-error --request POST "$url"
+          echo
+          echo "Deploy triggered."
+
+      - name: Wait for health check
+        env:
+          HEALTH_URL: ${{ secrets.RENDER_HEALTH_URL }}
+        run: |
+          if [ -z "$HEALTH_URL" ]; then
+            echo "RENDER_HEALTH_URL not set — skipping health poll"
+            exit 0
+          fi
+          echo "Polling ${HEALTH_URL}"
+          # Free-tier cold starts can take a minute; allow time for build + roll out.
+          for i in $(seq 1 60); do
+            if curl --fail --silent --show-error "$HEALTH_URL"; then
+              echo
+              echo "Healthy after ${i} attempt(s)."
+              exit 0
+            fi
+            echo "Attempt ${i}/60 — not ready yet"
+            sleep 15
+          done
+          echo "::error::Health check did not succeed in time"
+          exit 1

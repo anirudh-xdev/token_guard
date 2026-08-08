@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -400,6 +402,82 @@ func TestHandlerLogsProviderUsageFromJSONResponse(t *testing.T) {
 	}
 	if event.OutputTokens != 7 {
 		t.Fatalf("OutputTokens = %d, want provider-reported 7", event.OutputTokens)
+	}
+}
+
+func TestHandlerLogsProviderUsageFromGzipJSON(t *testing.T) {
+	var gzBuf bytes.Buffer
+	zw := gzip.NewWriter(&gzBuf)
+	_, _ = zw.Write([]byte(`{"usage":{"prompt_tokens":4398,"completion_tokens":4813,"total_tokens":9211},"choices":[{"message":{"content":"ok"}}]}`))
+	_ = zw.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a gateway that returns gzip even when the proxy did not ask for it.
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		_, _ = w.Write(gzBuf.Bytes())
+	}))
+	defer upstream.Close()
+
+	store := newFakeBudgetStore(100_000_000)
+	pricing := mustTestPricing(t)
+	handler, err := NewHandler(Config{
+		ListenAddr:  ":0",
+		UpstreamURL: upstream.URL,
+	}, withTokenEncoder(fakeTokenEncoder{}), WithGuard(store, pricing, fakeLoopBreaker{}), WithAsyncLogTimeout(time.Second))
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-test","max_tokens":20,"messages":[{"role":"user","content":"write 5000 words"}]}`))
+	req.Header.Set(tokenGuardAPIKeyHeader, "tg_test")
+	req.Header.Set("Accept-Encoding", "gzip")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("X-TokenGuard-Usage"); got != "in=4398;out=4813" {
+		t.Fatalf("X-TokenGuard-Usage = %q, want in=4398;out=4813", got)
+	}
+	event := waitUsageEvent(t, store.events)
+	if event.InputTokens != 4398 || event.OutputTokens != 4813 {
+		t.Fatalf("usage tokens = %d/%d, want 4398/4813", event.InputTokens, event.OutputTokens)
+	}
+}
+
+func TestHandlerLogsProviderUsageWithoutJSONContentType(t *testing.T) {
+	// Reproduces APIMaster-style responses that omit application/json.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-x","choices":[{"message":{"role":"assistant","content":"long answer"}}],"usage":{"prompt_tokens":4398,"completion_tokens":5572,"total_tokens":9970,"prompt_tokens_details":{"cached_tokens":3840}}}`))
+	}))
+	defer upstream.Close()
+
+	store := newFakeBudgetStore(100_000_000)
+	pricing := mustTestPricing(t)
+	handler, err := NewHandler(Config{
+		ListenAddr:  ":0",
+		UpstreamURL: upstream.URL,
+	}, withTokenEncoder(fakeTokenEncoder{}), WithGuard(store, pricing, fakeLoopBreaker{}), WithAsyncLogTimeout(time.Second))
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-test","max_tokens":20,"messages":[{"role":"user","content":"write 5000 words"}]}`))
+	req.Header.Set(tokenGuardAPIKeyHeader, "tg_test")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	event := waitUsageEvent(t, store.events)
+	if event.InputTokens != 4398 {
+		t.Fatalf("InputTokens = %d, want 4398 from provider usage", event.InputTokens)
+	}
+	if event.OutputTokens != 5572 {
+		t.Fatalf("OutputTokens = %d, want 5572 from provider usage", event.OutputTokens)
 	}
 }
 

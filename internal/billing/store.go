@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	defaultMaxOpenConns = 4
-	defaultPingTimeout  = 2 * time.Second
+	defaultMaxOpenConns = 8
+	defaultPingTimeout  = 10 * time.Second
+	defaultOpTimeout    = 15 * time.Second
 )
 
 type Config struct {
@@ -24,10 +25,13 @@ type Config struct {
 	AuthToken    string
 	MaxOpenConns int
 	PingTimeout  time.Duration
+	// OpTimeout is the per-request budget/DB operation deadline (Lookup/Reserve/etc).
+	OpTimeout time.Duration
 }
 
 type Store struct {
-	db *sql.DB
+	db        *sql.DB
+	opTimeout time.Duration
 }
 
 func ConfigFromEnv() (Config, error) {
@@ -40,11 +44,30 @@ func ConfigFromEnv() (Config, error) {
 		maxOpenConns = parsed
 	}
 
+	pingTimeout := defaultPingTimeout
+	if raw := strings.TrimSpace(os.Getenv("TOKENGUARD_DB_PING_TIMEOUT_MS")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("TOKENGUARD_DB_PING_TIMEOUT_MS must be a positive integer")
+		}
+		pingTimeout = time.Duration(parsed) * time.Millisecond
+	}
+
+	opTimeout := defaultOpTimeout
+	if raw := strings.TrimSpace(os.Getenv("TOKENGUARD_DB_OP_TIMEOUT_MS")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("TOKENGUARD_DB_OP_TIMEOUT_MS must be a positive integer")
+		}
+		opTimeout = time.Duration(parsed) * time.Millisecond
+	}
+
 	cfg := Config{
 		DatabaseURL:  strings.TrimSpace(os.Getenv("TURSO_DATABASE_URL")),
 		AuthToken:    strings.TrimSpace(os.Getenv("TURSO_AUTH_TOKEN")),
 		MaxOpenConns: maxOpenConns,
-		PingTimeout:  defaultPingTimeout,
+		PingTimeout:  pingTimeout,
+		OpTimeout:    opTimeout,
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -67,6 +90,9 @@ func (c Config) Validate() error {
 	if c.PingTimeout < 0 {
 		errs = append(errs, errors.New("PingTimeout cannot be negative"))
 	}
+	if c.OpTimeout < 0 {
+		errs = append(errs, errors.New("OpTimeout cannot be negative"))
+	}
 	return errors.Join(errs...)
 }
 
@@ -80,6 +106,9 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	if cfg.PingTimeout == 0 {
 		cfg.PingTimeout = defaultPingTimeout
 	}
+	if cfg.OpTimeout == 0 {
+		cfg.OpTimeout = defaultOpTimeout
+	}
 
 	dsn, err := BuildDatabaseURL(cfg.DatabaseURL, cfg.AuthToken)
 	if err != nil {
@@ -92,9 +121,11 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	}
 
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
-	db.SetMaxIdleConns(max(1, cfg.MaxOpenConns/2))
-	db.SetConnMaxIdleTime(time.Minute)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetMaxIdleConns(max(2, cfg.MaxOpenConns/2))
+	// Keep idle Turso HTTP connections longer — short idle TTL causes cold reconnects
+	// that often surface as "context deadline exceeded" under latency.
+	db.SetConnMaxIdleTime(10 * time.Minute)
+	db.SetConnMaxLifetime(0)
 
 	pingCtx, cancel := context.WithTimeout(ctx, cfg.PingTimeout)
 	defer cancel()
@@ -103,7 +134,15 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		return nil, fmt.Errorf("ping libsql: %w", err)
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, opTimeout: cfg.OpTimeout}, nil
+}
+
+// OpTimeout is the recommended per-call deadline for budget/DB work against Turso.
+func (s *Store) OpTimeout() time.Duration {
+	if s == nil || s.opTimeout <= 0 {
+		return defaultOpTimeout
+	}
+	return s.opTimeout
 }
 
 func BuildDatabaseURL(databaseURL, authToken string) (string, error) {

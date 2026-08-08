@@ -206,6 +206,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if billingStore != nil {
+		// Keep Turso HTTP connections warm — cold reconnects often time out from India/APAC.
+		go keepTursoWarm(ctx, billingStore)
+	}
+
 	if config.GuardEnabled && models.PricingSyncOpenRouterEnabled() {
 		if interval := models.PricingSyncInterval(); interval > 0 {
 			log.Printf("openrouter pricing sync interval %s", interval)
@@ -230,6 +235,27 @@ func main() {
 	case err := <-errCh:
 		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("serve proxy: %v", err)
+		}
+	}
+}
+
+func keepTursoWarm(ctx context.Context, store *billing.Store) {
+	if store == nil || store.DB() == nil {
+		return
+	}
+	ticker := time.NewTicker(90 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err := store.DB().PingContext(pingCtx)
+			cancel()
+			if err != nil {
+				log.Printf("turso keepalive ping failed: %v", err)
+			}
 		}
 	}
 }

@@ -592,20 +592,10 @@ LIMIT 1`, userID, preferred).Scan(
 			return teamSpendScope{}, false, fmt.Errorf("%w: not an active member of team %s", ErrTeamNotFound, preferred)
 		}
 	} else {
-		err = q.QueryRowContext(ctx, `
-SELECT m.team_id, m.cap_microusd, m.spent_microusd, m.reserved_microusd,
-       t.limit_microusd, t.spent_microusd, t.reserved_microusd
-FROM team_members m
-JOIN teams t ON t.id = m.team_id
-WHERE m.user_id = ? AND m.status = 'active'
-ORDER BY CASE m.role WHEN 'owner' THEN 0 ELSE 1 END, t.created_at ASC
-LIMIT 1`, userID).Scan(
-			&scope.TeamID, &scope.MemberCap, &scope.MemberSpent, &scope.MemberReserved,
-			&scope.TeamLimit, &scope.TeamSpent, &scope.TeamReserved,
-		)
-		if errors.Is(err, sql.ErrNoRows) {
-			return teamSpendScope{}, false, nil
-		}
+		// No X-TokenGuard-Team-ID: charge the personal user_budgets row only.
+		// Auto-picking a team made the portal "Budget/Spent" cards lie (personal
+		// limit shown while team pool still allowed traffic).
+		return teamSpendScope{}, false, nil
 	}
 	if err != nil {
 		return teamSpendScope{}, false, err

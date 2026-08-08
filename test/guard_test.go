@@ -109,6 +109,37 @@ func TestGuardBudgetExceeded(t *testing.T) {
 	}
 }
 
+func TestGuardBudgetExceededWhenAlreadyOverspent(t *testing.T) {
+	hits := &hitCountingUpstream{
+		next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"usage":{"prompt_tokens":1,"completion_tokens":1},"choices":[{"message":{"content":"x"}}]}`))
+		}),
+	}
+	h := newHarness(t, harnessOpts{
+		guardEnabled: true,
+		mgmtEnabled:  true,
+		budgetLimit:  50_000, // $0.05
+		upstream:     hits,
+	})
+	h.store.mu.Lock()
+	b := h.store.budgets[h.userID]
+	b.SpentMicroUSD = 210_000 // $0.21 already spent (over limit)
+	h.store.budgets[h.userID] = b
+	h.store.mu.Unlock()
+
+	status, data, _ := h.doJSON(http.MethodPost, "/v1/chat/completions", loadFixture(t, "chat.request.json"), h.proxyHeaders(nil))
+	if status != http.StatusPaymentRequired {
+		t.Fatalf("status=%d data=%v want 402", status, data)
+	}
+	if data["code"] != "budget_exceeded" {
+		t.Fatalf("code=%v want budget_exceeded (not budget_unavailable)", data["code"])
+	}
+	if hits.Hits() != 0 {
+		t.Fatalf("upstream hits = %d, want 0", hits.Hits())
+	}
+}
+
 func TestGuardLoopTripsAfterRepeatedIdenticalRequests(t *testing.T) {
 	const threshold = 3
 	hits := &hitCountingUpstream{

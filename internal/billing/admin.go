@@ -156,7 +156,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]UserBudgetView, error) {
 
 func (s *Store) ListRecentUsage(ctx context.Context, limit int) ([]UsageEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, IFNULL(api_key_id, ''), provider, model, IFNULL(session_id, ''), input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status
+		SELECT id, user_id, IFNULL(api_key_id, ''), provider, model, IFNULL(session_id, ''), input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status, created_at
 		FROM usage_events
 		ORDER BY created_at DESC
 		LIMIT ?
@@ -169,7 +169,7 @@ func (s *Store) ListRecentUsage(ctx context.Context, limit int) ([]UsageEvent, e
 	var events []UsageEvent
 	for rows.Next() {
 		var e UsageEvent
-		if err := rows.Scan(&e.ID, &e.UserID, &e.APIKeyID, &e.Provider, &e.Model, &e.SessionID, &e.InputTokens, &e.OutputTokens, &e.EstimatedCostMicroUSD, &e.ActualCostMicroUSD, &e.Status); err != nil {
+		if err := rows.Scan(&e.ID, &e.UserID, &e.APIKeyID, &e.Provider, &e.Model, &e.SessionID, &e.InputTokens, &e.OutputTokens, &e.EstimatedCostMicroUSD, &e.ActualCostMicroUSD, &e.Status, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, e)
@@ -196,7 +196,7 @@ func (s *Store) ListPortalUsage(ctx context.Context, userID, teamID string, limi
 	if teamID == "" {
 		rows, err := s.db.QueryContext(ctx, `
 SELECT id, user_id, IFNULL(api_key_id, ''), provider, model, IFNULL(session_id, ''),
-       input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status
+       input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status, created_at
 FROM usage_events
 WHERE user_id = ?
 ORDER BY created_at DESC
@@ -223,7 +223,7 @@ WHERE team_id = ? AND user_id = ? AND status = 'active'`, teamID, userID).Scan(&
 	if role == "owner" {
 		rows, err = s.db.QueryContext(ctx, `
 SELECT e.id, e.user_id, IFNULL(e.api_key_id, ''), e.provider, e.model, IFNULL(e.session_id, ''),
-       e.input_tokens, e.output_tokens, e.estimated_cost_microusd, e.actual_cost_microusd, e.status
+       e.input_tokens, e.output_tokens, e.estimated_cost_microusd, e.actual_cost_microusd, e.status, e.created_at
 FROM usage_events e
 WHERE e.user_id IN (
   SELECT user_id FROM team_members WHERE team_id = ? AND status = 'active'
@@ -233,7 +233,7 @@ LIMIT ?`, teamID, limit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
 SELECT id, user_id, IFNULL(api_key_id, ''), provider, model, IFNULL(session_id, ''),
-       input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status
+       input_tokens, output_tokens, estimated_cost_microusd, actual_cost_microusd, status, created_at
 FROM usage_events
 WHERE user_id = ?
 ORDER BY created_at DESC
@@ -252,7 +252,7 @@ func scanUsageEvents(rows *sql.Rows) ([]UsageEvent, error) {
 		var e UsageEvent
 		if err := rows.Scan(
 			&e.ID, &e.UserID, &e.APIKeyID, &e.Provider, &e.Model, &e.SessionID,
-			&e.InputTokens, &e.OutputTokens, &e.EstimatedCostMicroUSD, &e.ActualCostMicroUSD, &e.Status,
+			&e.InputTokens, &e.OutputTokens, &e.EstimatedCostMicroUSD, &e.ActualCostMicroUSD, &e.Status, &e.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

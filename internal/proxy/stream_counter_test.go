@@ -77,3 +77,15 @@ func TestJSONUsageExtractionCoversOpenAIAndAnthropic(t *testing.T) {
 		t.Fatalf("OpenRouter cost usage = %#v", orUsage)
 	}
 }
+
+func TestExtractUsageLooseFindsUsageAfterHugeContent(t *testing.T) {
+	// Simulate a partial window that is not valid JSON from the start, but ends with usage.
+	raw := []byte(`","content":"` + strings.Repeat("x", 200) + `"}]},"usage":{"prompt_tokens":4398,"completion_tokens":5572,"total_tokens":9970}}`)
+	usage, ok := extractUsageLoose(raw)
+	if !ok {
+		t.Fatal("extractUsageLoose returned ok=false")
+	}
+	if usage.InputTokens != 4398 || usage.OutputTokens != 5572 {
+		t.Fatalf("usage = %#v, want 4398/5572", usage)
+	}
+}

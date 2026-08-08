@@ -50,20 +50,27 @@ func (s *Store) ReserveBudget(ctx context.Context, userID string, amountMicroUSD
 	if amountMicroUSD < 0 {
 		return Budget{}, false, errors.New("reservation amount cannot be negative")
 	}
-	if amountMicroUSD == 0 {
-		budget, err := s.GetUserBudget(ctx, userID)
-		return budget, true, err
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Budget{}, false, fmt.Errorf("begin reservation tx: %w", err)
 	}
 	defer tx.Rollback()
 
+	// Always resolve team scope first so an invalid X-TokenGuard-Team-ID fails
+	// even when the estimated reservation amount is $0.
 	scope, onTeam, err := s.lookupTeamSpendScope(ctx, tx, userID)
 	if err != nil {
 		return Budget{}, false, err
+	}
+	if amountMicroUSD == 0 {
+		budget, err := scanBudget(ctx, tx, userID)
+		if err != nil {
+			return Budget{}, false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return Budget{}, false, err
+		}
+		return budget, true, nil
 	}
 
 	if onTeam {
@@ -170,6 +177,7 @@ type UsageEvent struct {
 	EstimatedCostMicroUSD int64  `json:"estimated_cost_microusd"`
 	ActualCostMicroUSD    int64  `json:"actual_cost_microusd"`
 	Status                string `json:"status"`
+	CreatedAt             string `json:"created_at,omitempty"`
 }
 
 func HashAPIKey(apiKey string) string {

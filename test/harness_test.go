@@ -510,41 +510,19 @@ type memTeamScope struct {
 }
 
 func (s *memoryStore) teamScopeLocked(userID, preferred string) (memTeamScope, bool, error) {
-	if preferred != "" {
-		m, ok := s.members[preferred+"|"+userID]
-		if !ok || m.status != "active" {
-			return memTeamScope{}, false, fmt.Errorf("%w: not an active member of team %s", billing.ErrTeamNotFound, preferred)
-		}
-		t := s.teams[preferred]
-		return memTeamScope{
-			teamID: preferred, userID: userID,
-			cap: m.cap, spent: m.spent, reserved: m.reserved,
-			teamLimit: t.limit, teamSpent: t.spent, teamReserved: t.reserved,
-		}, true, nil
-	}
-	var best *memTeamScope
-	for _, m := range s.members {
-		if m.userID != userID || m.status != "active" {
-			continue
-		}
-		t := s.teams[m.teamID]
-		scope := memTeamScope{
-			teamID: m.teamID, userID: userID,
-			cap: m.cap, spent: m.spent, reserved: m.reserved,
-			teamLimit: t.limit, teamSpent: t.spent, teamReserved: t.reserved,
-		}
-		if best == nil || m.role == "owner" {
-			cp := scope
-			best = &cp
-			if m.role == "owner" {
-				break
-			}
-		}
-	}
-	if best == nil {
+	if preferred == "" {
 		return memTeamScope{}, false, nil
 	}
-	return *best, true, nil
+	m, ok := s.members[preferred+"|"+userID]
+	if !ok || m.status != "active" {
+		return memTeamScope{}, false, fmt.Errorf("%w: not an active member of team %s", billing.ErrTeamNotFound, preferred)
+	}
+	t := s.teams[preferred]
+	return memTeamScope{
+		teamID: preferred, userID: userID,
+		cap: m.cap, spent: m.spent, reserved: m.reserved,
+		teamLimit: t.limit, teamSpent: t.spent, teamReserved: t.reserved,
+	}, true, nil
 }
 
 func (s *memoryStore) RecordUsage(ctx context.Context, event billing.UsageEvent) error {

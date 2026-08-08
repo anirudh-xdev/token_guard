@@ -19,7 +19,16 @@ function money(n: number | undefined) {
 
 function microToUsd(n: number | undefined) {
   if (typeof n !== "number") return "—";
-  return money(n / 1_000_000);
+  const usd = n / 1_000_000;
+  if (usd > 0 && usd < 0.01) return `$${usd.toFixed(4)}`;
+  return money(usd);
+}
+
+function formatUsageTime(iso: string | undefined) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
 }
 
 export function PortalApp() {
@@ -760,7 +769,10 @@ export function PortalApp() {
                 <span>
                   <code className="font-mono text-text-dim">{e.model}</code>{" "}
                   <span className="text-muted">
-                    {e.status} · {e.input_tokens}+{e.output_tokens} tok
+                    {e.status} · in {e.input_tokens} / out {e.output_tokens} tok
+                    {e.created_at
+                      ? ` · ${formatUsageTime(e.created_at)}`
+                      : ""}
                     {selectedTeam?.isOwner ? ` · ${e.user_id}` : ""}
                   </span>
                 </span>

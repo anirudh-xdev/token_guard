@@ -75,6 +75,7 @@ export type PortalUsageEvent = {
   output_tokens: number;
   actual_cost_microusd: number;
   status: string;
+  created_at?: string;
 };
 
 export type MeResponse = {
