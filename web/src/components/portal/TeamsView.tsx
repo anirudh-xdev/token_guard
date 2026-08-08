@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/PortalUI";
 import {
   asArray,
-  tgFetch,
+  tgPortalFetch,
   type TeamInvite,
   type TeamMember,
 } from "@/lib/tokenguard-api";
@@ -45,15 +45,14 @@ export function TeamsView() {
       setInvites([]);
       return;
     }
-    const token = await getToken();
     const [memberRes, inviteRes] = await Promise.all([
-      tgFetch<{ members?: TeamMember[] }>(
+      tgPortalFetch<{ members?: TeamMember[] }>(
         `/portal/api/teams/members?team_id=${encodeURIComponent(selectedTeam.id)}`,
-        token,
+        getToken,
       ),
-      tgFetch<{ invites?: TeamInvite[] }>(
+      tgPortalFetch<{ invites?: TeamInvite[] }>(
         `/portal/api/teams/invites?team_id=${encodeURIComponent(selectedTeam.id)}`,
-        token,
+        getToken,
       ),
     ]);
     if (!memberRes.ok) throw new Error(memberRes.data.error || "Could not load members");
@@ -87,10 +86,9 @@ export function TeamsView() {
     setBusy("create-team");
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch<{ id?: string }>(
+      const { ok, data } = await tgPortalFetch<{ id?: string }>(
         "/portal/api/teams",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({ name: teamName.trim(), budget_usd: budget }),
@@ -118,10 +116,9 @@ export function TeamsView() {
     setBusy("pool");
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch(
+      const { ok, data } = await tgPortalFetch(
         "/portal/api/teams/budget",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({ team_id: selectedTeam.id, budget_usd: value }),
@@ -147,10 +144,9 @@ export function TeamsView() {
     setBusy("invite");
     setError("");
     try {
-      const token = await getToken();
-      const { ok, status, data } = await tgFetch(
+      const { ok, status, data } = await tgPortalFetch(
         "/portal/api/teams/members",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({
@@ -185,10 +181,9 @@ export function TeamsView() {
     setBusy(`cap:${member.user_id}`);
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch(
+      const { ok, data } = await tgPortalFetch(
         "/portal/api/teams/members/cap",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({
@@ -213,10 +208,9 @@ export function TeamsView() {
     setBusy(`remove:${remove.user_id}`);
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch(
+      const { ok, data } = await tgPortalFetch(
         "/portal/api/teams/members/remove",
-        token,
+        getToken,
         {
           method: "POST",
           body: JSON.stringify({ team_id: selectedTeam.id, user_id: remove.user_id }),

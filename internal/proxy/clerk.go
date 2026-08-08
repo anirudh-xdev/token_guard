@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/clerk/clerk-sdk-go/v2/jwt"
@@ -17,7 +19,12 @@ type clerkIdentity struct {
 	Name    string
 }
 
-func (h *Handler) verifyClerkBearer(ctx context.Context, authorization string) (clerkIdentity, error) {
+const (
+	clerkVerifyTimeout = 8 * time.Second
+	clerkVerifyLeeway  = 10 * time.Second
+)
+
+func (h *Handler) verifyClerkBearer(parent context.Context, authorization string) (clerkIdentity, error) {
 	if h == nil || strings.TrimSpace(h.clerkSecretKey) == "" {
 		return clerkIdentity{}, errors.New("clerk is not configured")
 	}
@@ -29,7 +36,18 @@ func (h *Handler) verifyClerkBearer(ctx context.Context, authorization string) (
 		return clerkIdentity{}, errors.New("missing bearer token")
 	}
 
-	claims, err := jwt.Verify(ctx, &jwt.VerifyParams{Token: token})
+	// Detach from the inbound request cancel. React remounts / aborted fetches
+	// otherwise cancel JWKS lookup and surface as "Invalid Clerk session".
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), clerkVerifyTimeout)
+	defer cancel()
+
+	claims, err := jwt.Verify(ctx, &jwt.VerifyParams{
+		Token:  token,
+		Leeway: clerkVerifyLeeway,
+	})
 	if err != nil {
 		return clerkIdentity{}, fmt.Errorf("verify clerk token: %w", err)
 	}
@@ -79,4 +97,5 @@ func initClerk(secretKey string) {
 		return
 	}
 	clerk.SetKey(secretKey)
+	log.Printf("clerk JWT verification configured")
 }

@@ -227,9 +227,21 @@ func (h *Handler) requirePortalUser(w http.ResponseWriter, r *http.Request) (str
 		}
 		identity, err := h.verifyClerkBearer(r.Context(), auth)
 		if err != nil {
+			log.Printf("portal clerk verify failed: %v", err)
+			code := "unauthorized"
+			msg := "Invalid Clerk session"
+			errText := strings.ToLower(err.Error())
+			switch {
+			case strings.Contains(errText, "expired") || strings.Contains(errText, "token is expired"):
+				code = "session_expired"
+				msg = "Your Clerk session expired. Refresh the page or sign in again."
+			case strings.Contains(errText, "missing bearer"):
+				code = "missing_token"
+				msg = "Missing Clerk session token"
+			}
 			writePortalJSON(w, http.StatusUnauthorized, map[string]string{
-				"error": "Invalid Clerk session",
-				"code":  "unauthorized",
+				"error": msg,
+				"code":  code,
 			})
 			return "", false
 		}

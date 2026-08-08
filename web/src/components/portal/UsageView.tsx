@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/PortalUI";
 import {
   asArray,
-  tgFetch,
+  tgPortalFetch,
   type PortalUsageEvent,
 } from "@/lib/tokenguard-api";
 
@@ -26,11 +26,10 @@ export function UsageView() {
     setLoading(true);
     setError("");
     try {
-      const token = await getToken();
       const query = scopeID ? `?team_id=${encodeURIComponent(scopeID)}` : "";
-      const { ok, data } = await tgFetch<{ events?: PortalUsageEvent[] }>(
+      const { ok, data } = await tgPortalFetch<{ events?: PortalUsageEvent[] }>(
         `/portal/api/usage${query}`,
-        token,
+        getToken,
       );
       if (!ok) throw new Error(data.error || "Could not load usage");
       setEvents(asArray(data.events));

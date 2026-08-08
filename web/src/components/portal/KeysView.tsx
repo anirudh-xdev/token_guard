@@ -9,7 +9,7 @@ import {
   EmptyState,
   StatusBadge,
 } from "@/components/ui/PortalUI";
-import { tgFetch } from "@/lib/tokenguard-api";
+import { tgPortalFetch } from "@/lib/tokenguard-api";
 
 export function KeysView() {
   const { me, getToken, refreshMe, setError, setNotice } = usePortal();
@@ -26,10 +26,9 @@ export function KeysView() {
     setError("");
     setNotice("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch<{ api_key?: string }>(
+      const { ok, data } = await tgPortalFetch<{ api_key?: string }>(
         "/portal/api/keys",
-        token,
+        getToken,
         { method: "POST", body: JSON.stringify({ name: "default" }) },
       );
       if (!ok) throw new Error(data.error || "Could not create key");
@@ -47,10 +46,9 @@ export function KeysView() {
     setBusy(revoke.id);
     setError("");
     try {
-      const token = await getToken();
-      const { ok, data } = await tgFetch(
+      const { ok, data } = await tgPortalFetch(
         "/portal/api/keys/revoke",
-        token,
+        getToken,
         { method: "POST", body: JSON.stringify({ key_id: revoke.id }) },
       );
       if (!ok) throw new Error(data.error || "Could not revoke key");

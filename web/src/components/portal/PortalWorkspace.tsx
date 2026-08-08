@@ -16,9 +16,10 @@ import {
   asArray,
   normalizeMeResponse,
   normalizePortalOverview,
-  tgFetch,
+  tgPortalFetch,
   type MeResponse,
   type PortalOverview,
+  type PortalTokenGetter,
   type TeamAssignment,
 } from "@/lib/tokenguard-api";
 import { Alert, Button, Skeleton } from "@/components/ui/PortalUI";
@@ -32,7 +33,7 @@ type PortalContextValue = {
   setScopeID: (id: string) => void;
   refreshMe: () => Promise<void>;
   refreshOverview: () => Promise<void>;
-  getToken: () => Promise<string | null>;
+  getToken: PortalTokenGetter;
   error: string;
   notice: string;
   setError: (message: string) => void;
@@ -80,11 +81,11 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshMe = useCallback(async () => {
-    const token = await getToken();
-    const { ok, data } = await tgFetch<MeResponse>("/portal/api/me", token);
+    const { ok, data } = await tgPortalFetch<MeResponse>("/portal/api/me", getToken);
     if (!ok) throw new Error(data.error || "Could not load your account");
     const next = normalizeMeResponse(data);
     setMe(next);
+    setError("");
     const stored = sessionStorage.getItem(scopeStorageKey) || "";
     if (stored && !next.user.teams.some((team) => team.id === stored)) {
       sessionStorage.removeItem(scopeStorageKey);
@@ -96,16 +97,20 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
     if (!me) return;
     setOverviewLoading(true);
     try {
-      const token = await getToken();
       const query = scopeID
         ? `?team_id=${encodeURIComponent(scopeID)}&days=30`
         : "?days=30";
-      const { ok, data } = await tgFetch<PortalOverview>(
+      const { ok, data } = await tgPortalFetch<PortalOverview>(
         `/portal/api/overview${query}`,
-        token,
+        getToken,
       );
       if (!ok) throw new Error(data.error || "Could not load this scope");
       setOverview(normalizePortalOverview(data));
+      setError((current) =>
+        /clerk session|expired|unauthorized|not signed in/i.test(current)
+          ? ""
+          : current,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load overview");
       setOverview(null);
@@ -116,23 +121,39 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
       setLoading(true);
       const stored = sessionStorage.getItem(scopeStorageKey) || "";
       setScopeIDState(stored);
       void refreshMe()
-        .catch((cause) =>
-          setError(cause instanceof Error ? cause.message : "Could not load account"),
-        )
-        .finally(() => setLoading(false));
+        .catch((cause) => {
+          if (!cancelled) {
+            setError(
+              cause instanceof Error ? cause.message : "Could not load account",
+            );
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [isLoaded, isSignedIn, refreshMe]);
 
   useEffect(() => {
     if (!me) return;
-    const timer = window.setTimeout(() => void refreshOverview(), 0);
-    return () => window.clearTimeout(timer);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!cancelled) void refreshOverview();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [me, refreshOverview]);
 
   if (!isLoaded || (isSignedIn && loading)) {
@@ -168,14 +189,37 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
   }
 
   if (!me) {
+    const authProblem = /clerk session|expired|not signed in|unauthorized/i.test(
+      error,
+    );
     return (
       <main className="mx-auto max-w-xl px-5 py-16">
         <Alert tone="error">
           {error || "Your workspace could not be loaded. Refresh and try again."}
         </Alert>
-        <Button className="mt-5" onClick={() => void refreshMe()}>
-          Retry
-        </Button>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Button
+            onClick={() => {
+              setLoading(true);
+              void refreshMe()
+                .catch((cause) =>
+                  setError(
+                    cause instanceof Error
+                      ? cause.message
+                      : "Could not load account",
+                  ),
+                )
+                .finally(() => setLoading(false));
+            }}
+          >
+            Retry
+          </Button>
+          {authProblem ? (
+            <SignInButton mode="modal">
+              <Button variant="secondary">Sign in again</Button>
+            </SignInButton>
+          ) : null}
+        </div>
       </main>
     );
   }
@@ -266,7 +310,29 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
 
           <main className="min-w-0 px-5 py-7 sm:px-8 lg:px-10 lg:py-9">
             <div className="mx-auto max-w-5xl space-y-5">
-              {error ? <Alert tone="error">{error}</Alert> : null}
+              {error ? (
+                <Alert tone="error">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span>{error}</span>
+                    <Button
+                      variant="secondary"
+                      className="min-h-9 px-3"
+                      onClick={() => {
+                        setError("");
+                        void refreshMe().catch((cause) =>
+                          setError(
+                            cause instanceof Error
+                              ? cause.message
+                              : "Could not refresh account",
+                          ),
+                        );
+                      }}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                </Alert>
+              ) : null}
               {notice ? <Alert tone="success">{notice}</Alert> : null}
               {children}
             </div>

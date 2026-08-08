@@ -220,11 +220,27 @@ export function normalizePortalOverview(
   };
 }
 
+export type PortalTokenGetter = (options?: {
+  skipCache?: boolean;
+}) => Promise<string | null>;
+
+/** Clerk session JWTs are short-lived (~60s). Prefer a fresh token when needed. */
+export async function getPortalToken(
+  getToken: PortalTokenGetter,
+  opts?: { skipCache?: boolean },
+): Promise<string> {
+  const token = await getToken(opts?.skipCache ? { skipCache: true } : undefined);
+  if (!token) {
+    throw new Error("Not signed in. Sign in again to continue.");
+  }
+  return token;
+}
+
 export async function tgFetch<T>(
   path: string,
   token: string | null,
   init?: RequestInit,
-): Promise<{ ok: boolean; status: number; data: T & { error?: string } }> {
+): Promise<{ ok: boolean; status: number; data: T & { error?: string; code?: string } }> {
   const headers = new Headers(init?.headers);
   headers.set("Content-Type", "application/json");
   if (token) {
@@ -235,13 +251,38 @@ export async function tgFetch<T>(
     headers,
   });
   const text = await res.text();
-  let data = {} as T & { error?: string };
+  let data = {} as T & { error?: string; code?: string };
   try {
-    data = text ? (JSON.parse(text) as T & { error?: string }) : ({} as T & { error?: string });
+    data = text
+      ? (JSON.parse(text) as T & { error?: string; code?: string })
+      : ({} as T & { error?: string; code?: string });
   } catch {
-    data = { error: text } as T & { error?: string };
+    data = { error: text } as T & { error?: string; code?: string };
   }
   return { ok: res.ok, status: res.status, data };
+}
+
+/**
+ * Portal API helper that refreshes the Clerk token once on 401.
+ * This covers expired ~60s session JWTs without forcing a full page reload.
+ */
+export async function tgPortalFetch<T>(
+  path: string,
+  getToken: PortalTokenGetter,
+  init?: RequestInit,
+): Promise<{ ok: boolean; status: number; data: T & { error?: string; code?: string } }> {
+  let token = await getPortalToken(getToken);
+  let result = await tgFetch<T>(path, token, init);
+  if (
+    result.status === 401 &&
+    (result.data.code === "unauthorized" ||
+      result.data.code === "session_expired" ||
+      /clerk session|expired|unauthorized/i.test(result.data.error || ""))
+  ) {
+    token = await getPortalToken(getToken, { skipCache: true });
+    result = await tgFetch<T>(path, token, init);
+  }
+  return result;
 }
 
 /** Operator console → Go /mgmt/* with admin secret. */
