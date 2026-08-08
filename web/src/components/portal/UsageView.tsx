@@ -10,7 +10,11 @@ import {
   Skeleton,
   StatusBadge,
 } from "@/components/ui/PortalUI";
-import { tgFetch, type PortalUsageEvent } from "@/lib/tokenguard-api";
+import {
+  asArray,
+  tgFetch,
+  type PortalUsageEvent,
+} from "@/lib/tokenguard-api";
 
 export function UsageView() {
   const { scopeID, selectedTeam, getToken } = usePortal();
@@ -29,7 +33,7 @@ export function UsageView() {
         token,
       );
       if (!ok) throw new Error(data.error || "Could not load usage");
-      setEvents(data.events || []);
+      setEvents(asArray(data.events));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load usage");
     } finally {

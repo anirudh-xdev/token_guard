@@ -13,18 +13,26 @@ export function apiBaseUrl(): string {
 export type TeamAssignment = {
   id: string;
   name: string;
-  budget_usd: number;
-  spent_usd: number;
-  available_usd: number;
+  budget_usd?: number;
+  spent_usd?: number;
+  available_usd?: number;
   my_role: string;
-  my_cap_usd: number;
-  my_spent_usd: number;
+  my_cap_usd?: number;
+  my_spent_usd?: number;
   my_available_usd?: number;
   owner_email?: string;
   owner_name?: string;
   invited_by_email?: string;
   invited_by_name?: string;
   invited_at?: string;
+};
+
+export type PortalAPIKey = {
+  id: string;
+  name: string;
+  key_prefix: string;
+  status: string;
+  created_at: string;
 };
 
 export type AccountView = {
@@ -34,13 +42,7 @@ export type AccountView = {
   budget_usd: number;
   spent_usd: number;
   available_usd: number;
-  keys: Array<{
-    id: string;
-    name: string;
-    key_prefix: string;
-    status: string;
-    created_at: string;
-  }>;
+  keys: PortalAPIKey[];
   active_key_count: number;
   teams: TeamAssignment[];
 };
@@ -50,8 +52,8 @@ export type TeamMember = {
   email: string;
   name?: string;
   role: string;
-  cap_usd: number;
-  spent_usd: number;
+  cap_usd?: number;
+  spent_usd?: number;
   invited_by_email?: string;
   invited_at?: string;
 };
@@ -61,7 +63,7 @@ export type TeamInvite = {
   team_id: string;
   team_name: string;
   email: string;
-  cap_usd: number;
+  cap_usd?: number;
   invited_by_email: string;
   status: string;
   created_at?: string;
@@ -137,6 +139,86 @@ export type MeResponse = {
     can_create_key: boolean;
   };
 };
+
+/** Raw /portal/api/me payload before nil-slice normalization. */
+type RawMeResponse = {
+  user?: Partial<Omit<AccountView, "keys" | "teams">> & {
+    keys?: PortalAPIKey[] | null;
+    teams?: TeamAssignment[] | null;
+  };
+  integration?: Partial<MeResponse["integration"]>;
+  limits?: Partial<MeResponse["limits"]>;
+  error?: string;
+};
+
+/** Go nil slices encode as JSON null — normalize before UI use. */
+export function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+export function normalizeMeResponse(raw: RawMeResponse | MeResponse): MeResponse {
+  const user = raw?.user ?? {};
+  const limits = raw?.limits ?? {};
+  const integration = raw?.integration ?? {};
+  return {
+    user: {
+      user_id: user.user_id || "",
+      email: user.email || "",
+      name: user.name || "",
+      budget_usd: user.budget_usd ?? 0,
+      spent_usd: user.spent_usd ?? 0,
+      available_usd: user.available_usd ?? 0,
+      active_key_count: user.active_key_count ?? 0,
+      keys: asArray(user.keys),
+      teams: asArray(user.teams),
+    },
+    integration: {
+      proxy_base_url: integration.proxy_base_url || "",
+      proxy_url: integration.proxy_url || "",
+      docs_url: integration.docs_url || "",
+      discovery_url: integration.discovery_url || "",
+      api_key_header: integration.api_key_header || "X-TokenGuard-API-Key",
+    },
+    limits: {
+      max_keys: limits.max_keys ?? 0,
+      default_budget_usd: limits.default_budget_usd ?? 0,
+      can_create_key: Boolean(limits.can_create_key),
+    },
+  };
+}
+
+export function normalizePortalOverview(
+  raw: Partial<PortalOverview> | PortalOverview,
+): PortalOverview {
+  return {
+    scope: {
+      kind: raw?.scope?.kind === "team" ? "team" : "personal",
+      id: raw?.scope?.id,
+      name: raw?.scope?.name || "Personal",
+      role: raw?.scope?.role || "personal",
+      owner: raw?.scope?.owner,
+      days: raw?.scope?.days || 30,
+    },
+    budget: {
+      limit_microusd: raw?.budget?.limit_microusd ?? 0,
+      spent_microusd: raw?.budget?.spent_microusd ?? 0,
+      reserved_microusd: raw?.budget?.reserved_microusd ?? 0,
+      available_microusd: raw?.budget?.available_microusd ?? 0,
+    },
+    totals: {
+      requests: raw?.totals?.requests ?? 0,
+      completed: raw?.totals?.completed ?? 0,
+      blocked: raw?.totals?.blocked ?? 0,
+      provider_errors: raw?.totals?.provider_errors ?? 0,
+      input_tokens: raw?.totals?.input_tokens ?? 0,
+      output_tokens: raw?.totals?.output_tokens ?? 0,
+      cost_microusd: raw?.totals?.cost_microusd ?? 0,
+    },
+    daily: asArray(raw?.daily),
+    breakdown: asArray(raw?.breakdown),
+    pending_invite_count: raw?.pending_invite_count ?? 0,
+  };
+}
 
 export async function tgFetch<T>(
   path: string,

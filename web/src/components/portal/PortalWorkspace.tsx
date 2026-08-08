@@ -13,6 +13,9 @@ import {
   useState,
 } from "react";
 import {
+  asArray,
+  normalizeMeResponse,
+  normalizePortalOverview,
   tgFetch,
   type MeResponse,
   type PortalOverview,
@@ -65,7 +68,7 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
   const [notice, setNotice] = useState("");
 
   const selectedTeam = useMemo(
-    () => me?.user.teams.find((team) => team.id === scopeID) ?? null,
+    () => asArray(me?.user.teams).find((team) => team.id === scopeID) ?? null,
     [me, scopeID],
   );
 
@@ -80,9 +83,10 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
     const token = await getToken();
     const { ok, data } = await tgFetch<MeResponse>("/portal/api/me", token);
     if (!ok) throw new Error(data.error || "Could not load your account");
-    setMe(data);
+    const next = normalizeMeResponse(data);
+    setMe(next);
     const stored = sessionStorage.getItem(scopeStorageKey) || "";
-    if (stored && !data.user.teams.some((team) => team.id === stored)) {
+    if (stored && !next.user.teams.some((team) => team.id === stored)) {
       sessionStorage.removeItem(scopeStorageKey);
       setScopeIDState("");
     }
@@ -101,7 +105,7 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
         token,
       );
       if (!ok) throw new Error(data.error || "Could not load this scope");
-      setOverview(data);
+      setOverview(normalizePortalOverview(data));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load overview");
       setOverview(null);
@@ -226,7 +230,7 @@ export function PortalWorkspace({ children }: { children: ReactNode }) {
                 className="mt-2 min-h-11 w-full rounded-md border border-line bg-ink px-3 text-sm text-text"
               >
                 <option value="">Personal</option>
-                {me.user.teams.map((team) => (
+                {asArray(me.user.teams).map((team) => (
                   <option key={team.id} value={team.id}>
                     {team.name} · {team.my_role}
                   </option>

@@ -245,7 +245,7 @@ LIMIT ?`, userID, teamID, limit)
 }
 
 func scanUsageEvents(rows *sql.Rows) ([]UsageEvent, error) {
-	var events []UsageEvent
+	events := make([]UsageEvent, 0)
 	for rows.Next() {
 		var e UsageEvent
 		if err := rows.Scan(
