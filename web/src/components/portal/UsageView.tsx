@@ -3,18 +3,32 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePortal } from "@/components/portal/PortalWorkspace";
 import { formatMicroUSD, formatNumber } from "@/components/portal/OverviewView";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Button } from "@/components/ui/button";
 import {
-  Alert,
-  Button,
-  EmptyState,
-  Skeleton,
-  StatusBadge,
-} from "@/components/ui/PortalUI";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ToneAlert } from "@/components/ui/tone-alert";
 import {
   asArray,
   tgPortalFetch,
   type PortalUsageEvent,
 } from "@/lib/tokenguard-api";
+import { RefreshCwIcon } from "lucide-react";
 
 export function UsageView() {
   const { scopeID, selectedTeam, getToken } = usePortal();
@@ -52,8 +66,10 @@ export function UsageView() {
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-signal">
             {selectedTeam ? `${selectedTeam.name} scope` : "Personal scope"}
           </p>
-          <h1 className="mt-1 font-display text-3xl font-bold">Usage</h1>
-          <p className="mt-2 text-sm text-muted">
+          <h1 className="mt-1 font-display text-3xl font-bold tracking-tight">
+            Usage
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
             {selectedTeam?.my_role === "owner"
               ? "Every request charged to this team pool."
               : selectedTeam
@@ -61,12 +77,25 @@ export function UsageView() {
                 : "Only requests charged to your personal budget."}
           </p>
         </div>
-        <Button variant="secondary" onClick={() => void load()} disabled={loading}>
+        <Button
+          variant="outline"
+          size="lg"
+          onClick={() => void load()}
+          disabled={loading}
+        >
+          <RefreshCwIcon
+            data-icon="inline-start"
+            className={loading ? "animate-spin" : undefined}
+          />
           {loading ? "Refreshing…" : "Refresh"}
         </Button>
       </header>
 
-      {error ? <Alert tone="error">{error}</Alert> : null}
+      {error ? (
+        <ToneAlert tone="error" title="Could not load usage">
+          {error}
+        </ToneAlert>
+      ) : null}
 
       {loading ? (
         <div aria-label="Loading usage" className="space-y-3">
@@ -84,49 +113,69 @@ export function UsageView() {
           }
         />
       ) : (
-        <section aria-label="Recent usage events" className="overflow-x-auto">
-          <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-line text-xs uppercase tracking-[0.08em] text-muted">
-                <th scope="col" className="py-3 pr-4">Status</th>
-                <th scope="col" className="py-3 pr-4">Model</th>
-                <th scope="col" className="py-3 pr-4">Provider</th>
-                {selectedTeam?.my_role === "owner" ? (
-                  <th scope="col" className="py-3 pr-4">Member</th>
-                ) : null}
-                <th scope="col" className="py-3 pr-4 text-right">Tokens in / out</th>
-                <th scope="col" className="py-3 pr-4 text-right">Cost</th>
-                <th scope="col" className="py-3 text-right">Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {events.map((event) => (
-                <tr key={event.id}>
-                  <td className="py-3 pr-4"><StatusBadge status={event.status} /></td>
-                  <th scope="row" className="py-3 pr-4 font-mono font-medium">{event.model}</th>
-                  <td className="py-3 pr-4 text-muted">{event.provider}</td>
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-display text-lg">Recent events</CardTitle>
+            <CardDescription>
+              Latest 25 events for the selected spend scope.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Model</TableHead>
+                  <TableHead>Provider</TableHead>
                   {selectedTeam?.my_role === "owner" ? (
-                    <td className="max-w-44 truncate py-3 pr-4 font-mono text-xs text-muted" title={event.user_id}>
-                      {event.user_id}
-                    </td>
+                    <TableHead>Member</TableHead>
                   ) : null}
-                  <td className="py-3 pr-4 text-right font-mono">
-                    {formatNumber(event.input_tokens)} / {formatNumber(event.output_tokens)}
-                  </td>
-                  <td className="py-3 pr-4 text-right font-mono">
-                    {formatMicroUSD(event.actual_cost_microusd)}
-                  </td>
-                  <td className="py-3 text-right text-muted">
-                    {event.created_at ? new Date(event.created_at).toLocaleString() : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+                  <TableHead className="text-right">Tokens in / out</TableHead>
+                  <TableHead className="text-right">Cost</TableHead>
+                  <TableHead className="text-right">Time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {events.map((event) => (
+                  <TableRow key={event.id}>
+                    <TableCell>
+                      <StatusBadge status={event.status} />
+                    </TableCell>
+                    <TableCell className="font-mono font-medium">
+                      {event.model}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {event.provider}
+                    </TableCell>
+                    {selectedTeam?.my_role === "owner" ? (
+                      <TableCell
+                        className="max-w-44 truncate font-mono text-xs text-muted-foreground"
+                        title={event.user_id}
+                      >
+                        {event.user_id}
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="text-right font-mono">
+                      {formatNumber(event.input_tokens)} /{" "}
+                      {formatNumber(event.output_tokens)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatMicroUSD(event.actual_cost_microusd)}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {event.created_at
+                        ? new Date(event.created_at).toLocaleString()
+                        : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
 
-      <p className="text-xs leading-5 text-muted">
+      <p className="text-xs leading-5 text-muted-foreground">
         Showing the 25 most recent events. Historical rows created before team
         attribution was introduced may remain in personal history because they
         cannot be reassigned safely.

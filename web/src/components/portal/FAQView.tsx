@@ -3,8 +3,24 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { usePortal } from "@/components/portal/PortalWorkspace";
-import { Button } from "@/components/ui/PortalUI";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { apiBaseUrl } from "@/lib/tokenguard-api";
+import { cn } from "@/lib/utils";
 
 type FAQItem = {
   id: string;
@@ -20,6 +36,9 @@ const categories = [
   "Errors",
   "Portal",
 ] as const;
+
+const answerClassName =
+  "faq-answer max-w-3xl text-sm leading-7 text-muted-foreground [&_a]:font-semibold [&_a]:text-signal [&_a]:underline [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.8rem] [&_code]:text-text [&_li]:mt-2 [&_ol]:mt-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-3 [&_strong]:font-semibold [&_strong]:text-text [&_ul]:mt-4 [&_ul]:list-disc [&_ul]:pl-5";
 
 export function FAQView() {
   const { selectedTeam } = usePortal();
@@ -343,145 +362,133 @@ export function FAQView() {
   });
 
   return (
-    <div className="space-y-8">
-      <header className="border-b border-line pb-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0 max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-signal">
-              Help
-            </p>
-            <h1 className="mt-1 font-display text-3xl font-bold text-text">
-              Setup FAQ
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Session ids, team ids, provider keys, and the errors that stop a
-              first successful call — written for beginners.
-            </p>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="gap-5">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0 max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-signal">
+                Help
+              </p>
+              <CardTitle className="mt-1 font-display text-3xl font-bold tracking-tight">
+                Setup FAQ
+              </CardTitle>
+              <CardDescription className="mt-2 text-sm leading-6">
+                Session ids, team ids, provider keys, and the errors that stop a
+                first successful call — written for beginners.
+              </CardDescription>
+            </div>
+
+            <div className="grid w-full max-w-md shrink-0 gap-1.5">
+              <Label htmlFor="faq-search">Search</Label>
+              <Input
+                id="faq-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="session, team, 402, provider…"
+                className="h-10"
+              />
+            </div>
           </div>
 
-          <div className="w-full max-w-md shrink-0">
-            <label
-              htmlFor="faq-search"
-              className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-muted"
+          <div className="flex flex-wrap gap-2">
+            {categories.map((name) => {
+              const active = category === name;
+              return (
+                <Button
+                  key={name}
+                  type="button"
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                  onClick={() => setCategory(name)}
+                >
+                  {name}
+                </Button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="text-muted-foreground">
+              {filtered.length} {filtered.length === 1 ? "topic" : "topics"}
+            </span>
+            <span className="text-muted-foreground/40" aria-hidden>
+              ·
+            </span>
+            <Button variant="link" className="h-auto px-0 text-signal" asChild>
+              <Link href="/portal/integrate">Open Integrate examples</Link>
+            </Button>
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto px-0 text-signal"
+              onClick={() => {
+                setCategory("Headers");
+                setQuery("");
+                setOpenId("session-id");
+              }}
             >
-              Search
-            </label>
-            <input
-              id="faq-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="session, team, 402, provider…"
-              className="w-full"
-            />
+              Jump to session id
+            </Button>
           </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          {categories.map((name) => {
-            const active = category === name;
-            return (
-              <button
-                key={name}
-                type="button"
-                onClick={() => setCategory(name)}
-                className={`min-h-10 rounded-md px-3.5 text-sm font-semibold transition ${
-                  active
-                    ? "bg-signal text-on-signal"
-                    : "border border-line bg-panel text-text-dim hover:border-signal hover:text-signal"
-                }`}
-              >
-                {name}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
-          <span className="text-muted">
-            {filtered.length} {filtered.length === 1 ? "topic" : "topics"}
-          </span>
-          <span className="text-line" aria-hidden>
-            ·
-          </span>
-          <Link
-            href="/portal/integrate"
-            className="font-semibold text-signal hover:underline"
-          >
-            Open Integrate examples
-          </Link>
-          <button
-            type="button"
-            className="font-semibold text-signal hover:underline"
-            onClick={() => {
-              setCategory("Headers");
-              setQuery("");
-              setOpenId("session-id");
-            }}
-          >
-            Jump to session id
-          </button>
-        </div>
-      </header>
+        </CardHeader>
+      </Card>
 
       {filtered.length === 0 ? (
-        <div className="border-y border-line py-10 text-center">
-          <p className="font-display text-lg font-semibold text-text">
-            No topics matched
-          </p>
-          <p className="mt-2 text-sm text-muted">
-            Try a shorter search, or clear filters.
-          </p>
-          <Button
-            variant="secondary"
-            className="mt-5"
-            onClick={() => {
-              setQuery("");
-              setCategory("All");
-            }}
-          >
-            Clear filters
-          </Button>
-        </div>
+        <Card>
+          <CardHeader className="items-center text-center">
+            <CardTitle className="font-display text-lg">No topics matched</CardTitle>
+            <CardDescription>
+              Try a shorter search, or clear filters.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center pb-6">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setQuery("");
+                setCategory("All");
+              }}
+            >
+              Clear filters
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
-        <section aria-label="FAQ topics" className="border-y border-line">
-          {filtered.map((item) => {
-            const open = openId === item.id;
-            return (
-              <details
-                key={item.id}
-                open={open}
-                onToggle={(event) => {
-                  const el = event.currentTarget;
-                  if (el.open) setOpenId(item.id);
-                  else if (openId === item.id) setOpenId("");
-                }}
-                className="group border-b border-line last:border-b-0"
-              >
-                <summary className="cursor-pointer list-none py-5 marker:content-none focus-visible:outline-none [&::-webkit-details-marker]:hidden">
-                  <div className="flex items-start gap-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-muted">
+        <Card>
+          <CardContent className="pt-(--card-spacing)">
+            <Accordion
+              type="single"
+              collapsible
+              value={openId || undefined}
+              onValueChange={(value) => setOpenId(value ?? "")}
+              className="w-full"
+            >
+              {filtered.map((item) => (
+                <AccordionItem key={item.id} value={item.id}>
+                  <AccordionTrigger className="items-start py-4 hover:no-underline">
+                    <span className="flex min-w-0 flex-1 flex-col gap-1.5 text-left">
+                      <span className="text-[0.68rem] font-semibold uppercase tracking-widest text-muted-foreground">
                         {item.category}
-                      </p>
-                      <p className="mt-1.5 font-display text-lg font-semibold leading-snug text-text group-open:text-signal">
+                      </span>
+                      <span
+                        className={cn(
+                          "font-display text-lg font-semibold leading-snug text-text",
+                          openId === item.id && "text-signal",
+                        )}
+                      >
                         {item.question}
-                      </p>
-                    </div>
-                    <span
-                      aria-hidden
-                      className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-panel text-sm font-semibold text-muted group-open:border-signal group-open:text-signal"
-                    >
-                      {open ? "−" : "+"}
+                      </span>
                     </span>
-                  </div>
-                </summary>
-                <div className="faq-answer max-w-3xl pb-6 pl-0 text-sm leading-7 text-muted sm:pr-12 [&_a]:font-semibold [&_a]:text-signal [&_a]:underline [&_code]:rounded [&_code]:bg-ink-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.8rem] [&_code]:text-text [&_li]:mt-2 [&_ol]:mt-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-3 [&_strong]:font-semibold [&_strong]:text-text [&_ul]:mt-4 [&_ul]:list-disc [&_ul]:pl-5">
-                  {item.answer}
-                </div>
-              </details>
-            );
-          })}
-        </section>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className={answerClassName}>{item.answer}</div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

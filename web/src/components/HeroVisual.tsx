@@ -83,7 +83,7 @@ function FlowRow({
         ? "border-danger/30 text-danger bg-danger-dim"
         : tone === "info"
           ? "border-info/30 text-info bg-info-dim"
-          : "border-line text-muted bg-panel";
+          : "border-line text-muted-foreground bg-panel";
 
   return (
     <div

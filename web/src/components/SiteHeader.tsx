@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { demoUrl, siteConfig } from "@/lib/site";
 
 const nav = [
@@ -12,7 +13,7 @@ export function SiteHeader() {
   const liveDocs = demoUrl("/docs");
 
   return (
-    <header className="absolute inset-x-0 top-0 z-30 border-b border-line/70 bg-[var(--header-bg)] backdrop-blur-xl">
+    <header className="absolute inset-x-0 top-0 z-30 border-b border-border/70 bg-[var(--header-bg)] backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:h-16 sm:px-8">
         <Link
           href="/"
@@ -23,7 +24,7 @@ export function SiteHeader() {
 
         <nav
           aria-label="Site navigation"
-          className="hidden items-center gap-6 text-[0.7rem] uppercase tracking-[0.14em] text-muted md:flex"
+          className="hidden items-center gap-6 text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground md:flex"
         >
           {nav.map((item) => (
             <Link
@@ -38,25 +39,25 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.12em]">
           <details className="group relative md:hidden">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center rounded-md border border-line bg-panel px-3 font-semibold text-text">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center rounded-md border border-border bg-card px-3 font-semibold text-text">
               Menu
             </summary>
             <nav
               aria-label="Mobile site navigation"
-              className="absolute right-0 top-12 z-50 grid min-w-52 rounded-lg border border-line bg-panel p-2 text-sm normal-case tracking-normal shadow-lg"
+              className="absolute right-0 top-12 z-50 grid min-w-52 rounded-lg border border-border bg-card p-2 text-sm normal-case tracking-normal shadow-lg"
             >
               {nav.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="min-h-11 rounded-md px-3 py-3 text-text-dim hover:bg-ink-2 hover:text-text"
+                  className="min-h-11 rounded-md px-3 py-3 text-text-dim hover:bg-muted hover:text-text"
                 >
                   {item.label}
                 </Link>
               ))}
               <a
                 href={siteConfig.githubUrl}
-                className="min-h-11 rounded-md px-3 py-3 text-text-dim hover:bg-ink-2 hover:text-text"
+                className="min-h-11 rounded-md px-3 py-3 text-text-dim hover:bg-muted hover:text-text"
                 rel="noopener noreferrer"
                 target="_blank"
               >
@@ -65,29 +66,33 @@ export function SiteHeader() {
             </nav>
           </details>
           {liveDocs ? (
+            <Button
+              variant="link"
+              className="hidden h-auto px-0 text-muted-foreground sm:inline-flex"
+              asChild
+            >
+              <a href={liveDocs} rel="noopener noreferrer" target="_blank">
+                Live docs
+              </a>
+            </Button>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden uppercase tracking-[0.12em] sm:inline-flex"
+            asChild
+          >
             <a
-              href={liveDocs}
-              className="hidden text-muted transition-colors hover:text-text sm:inline"
+              href={siteConfig.githubUrl}
               rel="noopener noreferrer"
               target="_blank"
             >
-              Live docs
+              GitHub
             </a>
-          ) : null}
-          <a
-            href={siteConfig.githubUrl}
-            className="btn-ghost hidden min-h-11 items-center px-3 py-1.5 text-text sm:inline-flex"
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            GitHub
-          </a>
-          <Link
-            href="/portal"
-            className="inline-flex min-h-11 items-center rounded-md bg-signal px-3 py-1.5 font-semibold text-on-signal"
-          >
-            Portal
-          </Link>
+          </Button>
+          <Button size="sm" className="uppercase tracking-[0.12em]" asChild>
+            <Link href="/portal">Portal</Link>
+          </Button>
         </div>
       </div>
     </header>

@@ -37,7 +37,7 @@ export default function ArchitecturePage() {
           <h1 className="font-display mt-3 max-w-2xl text-4xl font-bold tracking-tight sm:text-5xl">
             Single binary. Three stores. Fail closed.
           </h1>
-          <p className="mt-5 max-w-xl text-sm leading-relaxed text-muted sm:text-base">
+          <p className="mt-5 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
             TokenGuard is a Go HTTP service. The entry point wires config,
             optional guard dependencies, and an http.ServeMux. Ops UI stays
             embedded at /dashboard — this page is the map.
@@ -47,10 +47,7 @@ export default function ArchitecturePage() {
 
       <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8">
         {/* Diagram-led flow */}
-        <div
-          className="overflow-x-auto border border-line bg-panel p-6 site-grid sm:p-10"
-          style={{ boxShadow: "var(--shadow-md)" }}
-        >
+        <div className="overflow-x-auto rounded-xl bg-card p-6 site-grid ring-1 ring-foreground/10 sm:p-10">
           <div className="flex min-w-[640px] items-center justify-between gap-3 text-center text-[0.65rem] uppercase tracking-[0.1em]">
             <Node label="Client app" />
             <Arrow />
@@ -66,7 +63,7 @@ export default function ArchitecturePage() {
               <Node label="Redis" tone="info" />
             </div>
           </div>
-          <p className="mt-8 text-center text-xs text-muted">
+          <p className="mt-8 text-center text-xs text-muted-foreground">
             Guard on → budget + loop preflight → upstream or block → settle usage
             into Turso
           </p>
@@ -87,7 +84,7 @@ export default function ArchitecturePage() {
               <span className="text-[0.7rem] uppercase tracking-[0.12em] text-signal">
                 {s.role}
               </span>
-              <span className="text-sm text-muted">{s.owns}</span>
+              <span className="text-sm text-muted-foreground">{s.owns}</span>
             </li>
           ))}
         </ul>
@@ -122,7 +119,7 @@ export default function ArchitecturePage() {
           </li>
         </ul>
 
-        <p className="mt-12 text-sm text-muted">
+        <p className="mt-12 text-sm text-muted-foreground">
           Full write-up:{" "}
           <a
             href={githubDoc("architecture")}
@@ -157,7 +154,7 @@ function Node({
       ? "border-danger/30 text-danger bg-danger-dim"
       : tone === "info"
         ? "border-info/30 text-info bg-info-dim"
-        : "border-line text-muted bg-ink";
+        : "border-line text-muted-foreground bg-ink";
 
   return (
     <div

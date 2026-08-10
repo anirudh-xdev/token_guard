@@ -1,15 +1,65 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { usePortal } from "@/components/portal/PortalWorkspace";
 import { formatUSD } from "@/components/portal/OverviewView";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  Alert,
-  Button,
-  ConfirmDialog,
-  EmptyState,
-  StatusBadge,
-} from "@/components/ui/PortalUI";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ToneAlert } from "@/components/ui/tone-alert";
+import { cn } from "@/lib/utils";
+import {
+  createTeamSchema,
+  inviteMemberSchema,
+  memberCapSchema,
+  poolBudgetSchema,
+  type CreateTeamInput,
+  type CreateTeamValues,
+  type InviteMemberInput,
+  type InviteMemberValues,
+  type PoolBudgetInput,
+  type PoolBudgetValues,
+} from "@/lib/team-form-schemas";
 import {
   asArray,
   tgPortalFetch,
@@ -31,13 +81,10 @@ export function TeamsView() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [busy, setBusy] = useState("");
-  const [teamName, setTeamName] = useState("");
-  const [teamBudget, setTeamBudget] = useState("100");
-  const [pool, setPool] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteCap, setInviteCap] = useState("10");
   const [caps, setCaps] = useState<Record<string, string>>({});
+  const [capErrors, setCapErrors] = useState<Record<string, string>>({});
   const [remove, setRemove] = useState<TeamMember | null>(null);
+  const [poolDefault, setPoolDefault] = useState("0");
 
   const loadOwnerDetails = useCallback(async () => {
     if (!selectedTeam || selectedTeam.my_role !== "owner") {
@@ -60,12 +107,13 @@ export function TeamsView() {
     const nextMembers = asArray(memberRes.data.members);
     setMembers(nextMembers);
     setInvites(asArray(inviteRes.data.invites));
-    setPool(String(selectedTeam.budget_usd ?? 0));
+    setPoolDefault(String(selectedTeam.budget_usd ?? 0));
     setCaps(
       Object.fromEntries(
         nextMembers.map((member) => [member.user_id, String(member.cap_usd ?? 0)]),
       ),
     );
+    setCapErrors({});
   }, [getToken, selectedTeam]);
 
   useEffect(() => {
@@ -77,12 +125,7 @@ export function TeamsView() {
     return () => window.clearTimeout(timer);
   }, [loadOwnerDetails, setError]);
 
-  async function createTeam() {
-    const budget = Number(teamBudget);
-    if (!teamName.trim() || !Number.isFinite(budget) || budget <= 0) {
-      setError("Enter a team name and a budget greater than $0.");
-      return;
-    }
+  async function createTeam(values: CreateTeamValues) {
     setBusy("create-team");
     setError("");
     try {
@@ -91,11 +134,13 @@ export function TeamsView() {
         getToken,
         {
           method: "POST",
-          body: JSON.stringify({ name: teamName.trim(), budget_usd: budget }),
+          body: JSON.stringify({
+            name: values.name,
+            budget_usd: values.budget_usd,
+          }),
         },
       );
       if (!ok) throw new Error(data.error || "Could not create team");
-      setTeamName("");
       await refreshMe();
       if (data.id) setScopeID(data.id);
       setNotice("Team created. Add members and set their caps next.");
@@ -106,13 +151,8 @@ export function TeamsView() {
     }
   }
 
-  async function savePool() {
+  async function savePool(values: PoolBudgetValues) {
     if (!selectedTeam) return;
-    const value = Number(pool);
-    if (!Number.isFinite(value) || value < 0) {
-      setError("Team budget must be $0 or more.");
-      return;
-    }
     setBusy("pool");
     setError("");
     try {
@@ -121,7 +161,10 @@ export function TeamsView() {
         getToken,
         {
           method: "POST",
-          body: JSON.stringify({ team_id: selectedTeam.id, budget_usd: value }),
+          body: JSON.stringify({
+            team_id: selectedTeam.id,
+            budget_usd: values.budget_usd,
+          }),
         },
       );
       if (!ok) throw new Error(data.error || "Could not update team budget");
@@ -134,13 +177,8 @@ export function TeamsView() {
     }
   }
 
-  async function inviteMember() {
+  async function inviteMember(values: InviteMemberValues) {
     if (!selectedTeam) return;
-    const cap = Number(inviteCap);
-    if (!inviteEmail.includes("@") || !Number.isFinite(cap) || cap < 0) {
-      setError("Enter a valid email and a non-negative member cap.");
-      return;
-    }
     setBusy("invite");
     setError("");
     try {
@@ -151,13 +189,12 @@ export function TeamsView() {
           method: "POST",
           body: JSON.stringify({
             team_id: selectedTeam.id,
-            email: inviteEmail.trim(),
-            cap_usd: cap,
+            email: values.email,
+            cap_usd: values.cap_usd,
           }),
         },
       );
       if (!ok) throw new Error(data.error || "Could not invite member");
-      setInviteEmail("");
       setNotice(
         status === 202
           ? "Invite saved. They will join automatically after signing in."
@@ -173,11 +210,20 @@ export function TeamsView() {
 
   async function saveCap(member: TeamMember) {
     if (!selectedTeam) return;
-    const cap = Number(caps[member.user_id]);
-    if (!Number.isFinite(cap) || cap < 0) {
-      setError("Member cap must be $0 or more.");
+    const parsed = memberCapSchema.safeParse({
+      cap_usd: caps[member.user_id] ?? String(member.cap_usd ?? 0),
+    });
+    if (!parsed.success) {
+      const message =
+        parsed.error.issues[0]?.message || "Member cap must be $0 or more.";
+      setCapErrors((current) => ({ ...current, [member.user_id]: message }));
       return;
     }
+    setCapErrors((current) => {
+      const next = { ...current };
+      delete next[member.user_id];
+      return next;
+    });
     setBusy(`cap:${member.user_id}`);
     setError("");
     try {
@@ -189,7 +235,7 @@ export function TeamsView() {
           body: JSON.stringify({
             team_id: selectedTeam.id,
             user_id: member.user_id,
-            cap_usd: cap,
+            cap_usd: parsed.data.cap_usd,
           }),
         },
       );
@@ -233,14 +279,16 @@ export function TeamsView() {
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-signal">
           Teams
         </p>
-        <h1 className="mt-1 font-display text-3xl font-bold">Spend together, clearly</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+        <h1 className="mt-1 font-display text-3xl font-bold tracking-tight">
+          Spend together, clearly
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
           Team budgets are separate from personal spend. Your application must
           send the team header to charge a pool.
         </p>
       </header>
 
-      <section aria-labelledby="assignments-heading">
+      <section aria-labelledby="assignments-heading" className="space-y-4">
         <h2 id="assignments-heading" className="font-display text-lg font-semibold">
           My team assignments
         </h2>
@@ -250,21 +298,22 @@ export function TeamsView() {
             description="Create a team to manage a shared LLM budget, or ask an owner to invite your sign-in email."
           />
         ) : (
-          <div className="mt-4 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {asArray(me.user.teams).map((team) => (
               <button
                 key={team.id}
                 type="button"
                 onClick={() => setScopeID(team.id)}
-                className={`min-h-32 bg-panel p-4 text-left hover:bg-ink ${
-                  selectedTeam?.id === team.id ? "outline-2 -outline-offset-2 outline-signal" : ""
-                }`}
+                className={cn(
+                  "rounded-xl bg-card p-4 text-left ring-1 ring-foreground/10 transition hover:bg-muted/60",
+                  selectedTeam?.id === team.id && "ring-2 ring-signal",
+                )}
               >
                 <span className="flex items-start justify-between gap-3">
                   <strong className="font-display text-lg">{team.name}</strong>
                   <StatusBadge status={team.my_role} />
                 </span>
-                <span className="mt-3 block text-sm text-muted">
+                <span className="mt-3 block text-sm text-muted-foreground">
                   {team.my_role === "owner"
                     ? `${formatUSD(team.spent_usd)} of ${formatUSD(team.budget_usd)} pool spent`
                     : `${formatUSD(team.my_spent_usd)} of ${formatUSD(team.my_cap_usd)} allowance spent`}
@@ -279,16 +328,13 @@ export function TeamsView() {
         selectedTeam.my_role === "owner" ? (
           <OwnerTeamPanel
             teamName={selectedTeam.name}
-            pool={pool}
-            setPool={setPool}
-            inviteEmail={inviteEmail}
-            setInviteEmail={setInviteEmail}
-            inviteCap={inviteCap}
-            setInviteCap={setInviteCap}
+            poolDefault={poolDefault}
             members={members}
             invites={invites}
             caps={caps}
             setCaps={setCaps}
+            capErrors={capErrors}
+            setCapErrors={setCapErrors}
             busy={busy}
             onSavePool={savePool}
             onInvite={inviteMember}
@@ -296,222 +342,434 @@ export function TeamsView() {
             onRemove={setRemove}
           />
         ) : (
-          <section aria-labelledby="member-team-heading" className="border-t border-line pt-6">
-            <h2 id="member-team-heading" className="font-display text-xl font-semibold">
-              My access in {selectedTeam.name}
-            </h2>
-            <p className="mt-2 text-sm text-muted">
-              Owner: {selectedTeam.owner_name || selectedTeam.owner_email || "Team owner"}
-            </p>
-            <dl className="mt-5 grid gap-4 sm:grid-cols-3">
-              <TeamMetric label="My cap" value={selectedTeam.my_cap_usd} />
-              <TeamMetric label="My spend" value={selectedTeam.my_spent_usd} />
-              <TeamMetric
-                label="My remaining"
-                value={
-                  selectedTeam.my_available_usd ??
-                  (selectedTeam.my_cap_usd ?? 0) - (selectedTeam.my_spent_usd ?? 0)
-                }
-              />
-            </dl>
-            <Alert tone="info">
-              Only the owner can view the full roster, change caps, or manage the
-              team pool. Your usage page shows only your activity in this team.
-            </Alert>
-          </section>
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-display text-xl">
+                My access in {selectedTeam.name}
+              </CardTitle>
+              <CardDescription>
+                Owner: {selectedTeam.owner_name || selectedTeam.owner_email || "Team owner"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <dl className="grid gap-4 sm:grid-cols-3">
+                <TeamMetric label="My cap" value={selectedTeam.my_cap_usd} />
+                <TeamMetric label="My spend" value={selectedTeam.my_spent_usd} />
+                <TeamMetric
+                  label="My remaining"
+                  value={
+                    selectedTeam.my_available_usd ??
+                    (selectedTeam.my_cap_usd ?? 0) - (selectedTeam.my_spent_usd ?? 0)
+                  }
+                />
+              </dl>
+              <ToneAlert tone="info">
+                Only the owner can view the full roster, change caps, or manage the
+                team pool. Your usage page shows only your activity in this team.
+              </ToneAlert>
+            </CardContent>
+          </Card>
         )
       ) : null}
 
-      <section aria-labelledby="create-team-heading" className="border-t border-line pt-7">
-        <h2 id="create-team-heading" className="font-display text-lg font-semibold">
-          Create a team
-        </h2>
-        <p className="mt-1 text-sm text-muted">
-          You become the owner and can invite members after creation.
-        </p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-end">
-          <Field id="team-name" label="Team name">
-            <input id="team-name" value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="Acme AI" />
-          </Field>
-          <Field id="team-budget" label="Pool budget (USD)">
-            <input id="team-budget" type="number" min="0.01" step="0.01" value={teamBudget} onChange={(event) => setTeamBudget(event.target.value)} />
-          </Field>
-          <Button onClick={() => void createTeam()} disabled={busy === "create-team"}>
-            {busy === "create-team" ? "Creating…" : "Create team"}
-          </Button>
-        </div>
-      </section>
+      <CreateTeamCard busy={busy === "create-team"} onCreate={createTeam} />
 
-      <ConfirmDialog
-        open={Boolean(remove)}
-        title="Remove team member?"
-        description={`${remove?.email || "This member"} will lose access to the team pool. Historical team usage remains available to the owner.`}
-        confirmLabel="Remove member"
-        busy={Boolean(remove && busy === `remove:${remove.user_id}`)}
-        onClose={() => setRemove(null)}
-        onConfirm={() => void removeMember()}
-      />
+      <Dialog open={Boolean(remove)} onOpenChange={(open) => !open && setRemove(null)}>
+        <DialogContent showCloseButton={!busy.startsWith("remove:")}>
+          <DialogHeader>
+            <DialogTitle>Remove team member?</DialogTitle>
+            <DialogDescription>
+              {remove?.email || "This member"} will lose access to the team pool.
+              Historical team usage remains available to the owner.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRemove(null)}
+              disabled={Boolean(remove && busy === `remove:${remove.user_id}`)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void removeMember()}
+              disabled={Boolean(remove && busy === `remove:${remove.user_id}`)}
+            >
+              {remove && busy === `remove:${remove.user_id}`
+                ? "Working…"
+                : "Remove member"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
+  );
+}
+
+function CreateTeamCard({
+  busy,
+  onCreate,
+}: {
+  busy: boolean;
+  onCreate: (values: CreateTeamValues) => Promise<void>;
+}) {
+  const form = useForm<CreateTeamInput, unknown, CreateTeamValues>({
+    resolver: zodResolver(createTeamSchema),
+    defaultValues: { name: "", budget_usd: "100" },
+    mode: "onSubmit",
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="font-display text-lg">Create a team</CardTitle>
+        <CardDescription>
+          You become the owner and can invite members after creation.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-start"
+          onSubmit={form.handleSubmit(async (values) => {
+            await onCreate(values);
+            form.reset({ name: "", budget_usd: "100" });
+          })}
+          noValidate
+        >
+          <Controller
+            name="name"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="team-name">Team name</FieldLabel>
+                <Input
+                  {...field}
+                  id="team-name"
+                  placeholder="Acme AI"
+                  className="h-10"
+                  aria-invalid={fieldState.invalid}
+                  disabled={busy}
+                />
+                {fieldState.invalid ? (
+                  <FieldError errors={[fieldState.error]} />
+                ) : null}
+              </Field>
+            )}
+          />
+          <Controller
+            name="budget_usd"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="team-budget">Pool budget (USD)</FieldLabel>
+                <Input
+                  {...field}
+                  id="team-budget"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="h-10"
+                  aria-invalid={fieldState.invalid}
+                  disabled={busy}
+                />
+                {fieldState.invalid ? (
+                  <FieldError errors={[fieldState.error]} />
+                ) : null}
+              </Field>
+            )}
+          />
+          <Button type="submit" size="lg" className="sm:mt-6" disabled={busy}>
+            {busy ? "Creating…" : "Create team"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
 function OwnerTeamPanel(props: {
   teamName: string;
-  pool: string;
-  setPool: (value: string) => void;
-  inviteEmail: string;
-  setInviteEmail: (value: string) => void;
-  inviteCap: string;
-  setInviteCap: (value: string) => void;
+  poolDefault: string;
   members: TeamMember[];
   invites: TeamInvite[];
   caps: Record<string, string>;
-  setCaps: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  setCaps: Dispatch<SetStateAction<Record<string, string>>>;
+  capErrors: Record<string, string>;
+  setCapErrors: Dispatch<SetStateAction<Record<string, string>>>;
   busy: string;
-  onSavePool: () => Promise<void>;
-  onInvite: () => Promise<void>;
+  onSavePool: (values: PoolBudgetValues) => Promise<void>;
+  onInvite: (values: InviteMemberValues) => Promise<void>;
   onSaveCap: (member: TeamMember) => Promise<void>;
   onRemove: (member: TeamMember) => void;
 }) {
+  const poolForm = useForm<PoolBudgetInput, unknown, PoolBudgetValues>({
+    resolver: zodResolver(poolBudgetSchema),
+    defaultValues: { budget_usd: props.poolDefault },
+    mode: "onSubmit",
+  });
+
+  const inviteForm = useForm<InviteMemberInput, unknown, InviteMemberValues>({
+    resolver: zodResolver(inviteMemberSchema),
+    defaultValues: { email: "", cap_usd: "10" },
+    mode: "onSubmit",
+  });
+
+  useEffect(() => {
+    poolForm.reset({ budget_usd: props.poolDefault });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when server pool changes
+  }, [props.poolDefault]);
+
   return (
-    <section aria-labelledby="owner-team-heading" className="border-t border-line pt-7">
-      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-signal">Owner controls</p>
-      <h2 id="owner-team-heading" className="mt-1 font-display text-2xl font-semibold">
-        Manage {props.teamName}
-      </h2>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void props.onSavePool();
-          }}
-        >
-          <h3 className="font-semibold">Team pool</h3>
-          <div className="mt-3 flex items-end gap-3">
-            <Field id="pool-budget" label="Budget (USD)" className="flex-1">
-              <input id="pool-budget" type="number" min="0" step="0.01" value={props.pool} onChange={(event) => props.setPool(event.target.value)} />
-            </Field>
-            <Button variant="secondary" type="submit" disabled={props.busy === "pool"}>
-              {props.busy === "pool" ? "Saving…" : "Save"}
-            </Button>
-          </div>
-        </form>
-
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void props.onInvite();
-          }}
-        >
-          <h3 className="font-semibold">Invite member</h3>
-          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem_auto] sm:items-end">
-            <Field id="invite-email" label="Email">
-              <input id="invite-email" type="email" value={props.inviteEmail} onChange={(event) => props.setInviteEmail(event.target.value)} placeholder="member@company.com" />
-            </Field>
-            <Field id="invite-cap" label="Cap (USD)">
-              <input id="invite-cap" type="number" min="0" step="0.01" value={props.inviteCap} onChange={(event) => props.setInviteCap(event.target.value)} />
-            </Field>
-            <Button type="submit" disabled={props.busy === "invite"}>
-              {props.busy === "invite" ? "Inviting…" : "Invite"}
-            </Button>
-          </div>
-        </form>
+    <section aria-labelledby="owner-team-heading" className="space-y-6">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-signal">
+          Owner controls
+        </p>
+        <h2 id="owner-team-heading" className="mt-1 font-display text-2xl font-semibold">
+          Manage {props.teamName}
+        </h2>
       </div>
 
-      {props.invites.length > 0 ? (
-        <div className="mt-7">
-          <h3 className="font-semibold">Pending invites</h3>
-          <ul className="mt-3 divide-y divide-line border-y border-line">
-            {props.invites.map((invite) => (
-              <li key={invite.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm">
-                <span>{invite.email}</span>
-                <span className="text-muted">{formatUSD(invite.cap_usd)} cap · waiting for sign-in</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className="mt-7 overflow-x-auto">
-        <h3 className="font-semibold">Members</h3>
-        <table className="mt-3 w-full min-w-[44rem] border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-line text-xs uppercase tracking-[0.08em] text-muted">
-              <th scope="col" className="py-3 pr-4">Member</th>
-              <th scope="col" className="py-3 pr-4">Role</th>
-              <th scope="col" className="py-3 pr-4 text-right">Spent</th>
-              <th scope="col" className="py-3 pr-4">Cap (USD)</th>
-              <th scope="col" className="py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {props.members.map((member) => (
-              <tr key={member.user_id}>
-                <th scope="row" className="py-3 pr-4 font-medium">
-                  {member.name || member.email}
-                  <span className="block text-xs font-normal text-muted">{member.email}</span>
-                </th>
-                <td className="py-3 pr-4"><StatusBadge status={member.role} /></td>
-                <td className="py-3 pr-4 text-right font-mono">{formatUSD(member.spent_usd)}</td>
-                <td className="py-3 pr-4">
-                  {member.role === "owner" ? (
-                    <span className="text-muted">{formatUSD(member.cap_usd)}</span>
-                  ) : (
-                    <input
-                      aria-label={`Cap for ${member.email}`}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Team pool</CardTitle>
+            <CardDescription>Hard limit for the shared budget.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="flex items-start gap-3"
+              onSubmit={poolForm.handleSubmit((values) => props.onSavePool(values))}
+              noValidate
+            >
+              <Controller
+                name="budget_usd"
+                control={poolForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid} className="flex-1">
+                    <FieldLabel htmlFor="pool-budget">Budget (USD)</FieldLabel>
+                    <Input
+                      {...field}
+                      id="pool-budget"
                       type="number"
                       min="0"
                       step="0.01"
-                      className="w-28"
-                      value={props.caps[member.user_id] ?? String(member.cap_usd ?? 0)}
-                      onChange={(event) =>
-                        props.setCaps((current) => ({ ...current, [member.user_id]: event.target.value }))
-                      }
+                      className="h-10"
+                      aria-invalid={fieldState.invalid}
+                      disabled={props.busy === "pool"}
                     />
-                  )}
-                </td>
-                <td className="py-3 text-right">
-                  {member.role !== "owner" ? (
-                    <span className="inline-flex gap-2">
-                      <Button
-                        variant="secondary"
-                        onClick={() => void props.onSaveCap(member)}
-                        disabled={props.busy === `cap:${member.user_id}`}
-                      >
-                        Save
-                      </Button>
-                      <Button variant="danger" onClick={() => props.onRemove(member)}>
-                        Remove
-                      </Button>
-                    </span>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
+                    {fieldState.invalid ? (
+                      <FieldError errors={[fieldState.error]} />
+                    ) : null}
+                  </Field>
+                )}
+              />
+              <Button
+                variant="outline"
+                type="submit"
+                size="lg"
+                className="mt-6"
+                disabled={props.busy === "pool"}
+              >
+                {props.busy === "pool" ? "Saving…" : "Save"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
-function Field({
-  id,
-  label,
-  className = "",
-  children,
-}: {
-  id: string;
-  label: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label htmlFor={id} className={`block text-sm ${className}`}>
-      <span className="mb-1.5 block font-semibold text-text-dim">{label}</span>
-      <span className="portal-field block">{children}</span>
-    </label>
+        <Card>
+          <CardHeader>
+            <CardTitle>Invite member</CardTitle>
+            <CardDescription>
+              Cap can be at most the pool; caps may oversubscribe the pool.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={inviteForm.handleSubmit(async (values) => {
+                await props.onInvite(values);
+                inviteForm.reset({ email: "", cap_usd: "10" });
+              })}
+              noValidate
+            >
+              <FieldGroup className="gap-3 sm:grid sm:grid-cols-[minmax(0,1fr)_8rem_auto] sm:items-start">
+                <Controller
+                  name="email"
+                  control={inviteForm.control}
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="invite-email">Email</FieldLabel>
+                      <Input
+                        {...field}
+                        id="invite-email"
+                        type="email"
+                        placeholder="member@company.com"
+                        className="h-10"
+                        aria-invalid={fieldState.invalid}
+                        disabled={props.busy === "invite"}
+                      />
+                      {fieldState.invalid ? (
+                        <FieldError errors={[fieldState.error]} />
+                      ) : null}
+                    </Field>
+                  )}
+                />
+                <Controller
+                  name="cap_usd"
+                  control={inviteForm.control}
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="invite-cap">Cap (USD)</FieldLabel>
+                      <Input
+                        {...field}
+                        id="invite-cap"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="h-10"
+                        aria-invalid={fieldState.invalid}
+                        disabled={props.busy === "invite"}
+                      />
+                      {fieldState.invalid ? (
+                        <FieldError errors={[fieldState.error]} />
+                      ) : null}
+                    </Field>
+                  )}
+                />
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="sm:mt-6"
+                  disabled={props.busy === "invite"}
+                >
+                  {props.busy === "invite" ? "Inviting…" : "Invite"}
+                </Button>
+              </FieldGroup>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+
+      {props.invites.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pending invites</CardTitle>
+            <CardDescription>
+              Waiting for the invitee to sign in with this email.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-0">
+            {props.invites.map((invite, index) => (
+              <div key={invite.id}>
+                {index > 0 ? <Separator /> : null}
+                <div className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                  <span className="font-medium">{invite.email}</span>
+                  <Badge variant="secondary">
+                    {formatUSD(invite.cap_usd)} cap · waiting
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Members</CardTitle>
+          <CardDescription>
+            Save a cap after editing. Removing a member does not erase usage history.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead className="text-right">Spent</TableHead>
+                <TableHead>Cap (USD)</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {props.members.map((member) => (
+                <TableRow key={member.user_id}>
+                  <TableCell>
+                    <div className="font-medium">{member.name || member.email}</div>
+                    <div className="text-xs text-muted-foreground">{member.email}</div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={member.role} />
+                  </TableCell>
+                  <TableCell className="text-right font-mono">
+                    {formatUSD(member.spent_usd)}
+                  </TableCell>
+                  <TableCell>
+                    {member.role === "owner" ? (
+                      <span className="text-muted-foreground">
+                        {formatUSD(member.cap_usd)}
+                      </span>
+                    ) : (
+                      <Field
+                        data-invalid={Boolean(props.capErrors[member.user_id])}
+                        className="gap-1"
+                      >
+                        <Input
+                          aria-label={`Cap for ${member.email}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="h-9 w-28"
+                          value={props.caps[member.user_id] ?? String(member.cap_usd ?? 0)}
+                          aria-invalid={Boolean(props.capErrors[member.user_id])}
+                          onChange={(event) => {
+                            props.setCaps((current) => ({
+                              ...current,
+                              [member.user_id]: event.target.value,
+                            }));
+                            props.setCapErrors((current) => {
+                              const next = { ...current };
+                              delete next[member.user_id];
+                              return next;
+                            });
+                          }}
+                        />
+                        {props.capErrors[member.user_id] ? (
+                          <FieldError>{props.capErrors[member.user_id]}</FieldError>
+                        ) : null}
+                      </Field>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {member.role !== "owner" ? (
+                      <span className="inline-flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void props.onSaveCap(member)}
+                          disabled={props.busy === `cap:${member.user_id}`}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => props.onRemove(member)}
+                        >
+                          Remove
+                        </Button>
+                      </span>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 
@@ -524,7 +782,9 @@ function TeamMetric({
 }) {
   return (
     <div className="border-l-2 border-line pl-4">
-      <dt className="text-xs uppercase tracking-[0.08em] text-muted">{label}</dt>
+      <dt className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+        {label}
+      </dt>
       <dd className="mt-1 font-mono text-xl">{formatUSD(value)}</dd>
     </div>
   );

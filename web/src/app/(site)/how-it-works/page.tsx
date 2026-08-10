@@ -18,7 +18,7 @@ export default function HowItWorksPage() {
           <h1 className="font-display mt-3 max-w-2xl text-4xl font-bold tracking-tight sm:text-5xl">
             How TokenGuard decides before upstream.
           </h1>
-          <p className="mt-5 max-w-xl text-sm leading-relaxed text-muted sm:text-base">
+          <p className="mt-5 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
             Every guarded call runs preflight in parallel: budget reservation and
             loop detection. Failures never reach the provider. Success strips
             control headers and settles after the response.
