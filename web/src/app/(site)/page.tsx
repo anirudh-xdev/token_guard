@@ -48,7 +48,7 @@ export default function HomePage() {
               stays on the Go binary — this site tells the story.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="lg" className="uppercase tracking-[0.12em]" asChild>
+              <Button size="lg" className="uppercase tracking-[0.12em] text-white!" asChild>
                 <Link href="/how-it-works">How it works</Link>
               </Button>
               <Button

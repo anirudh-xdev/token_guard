@@ -76,7 +76,7 @@ const client = new OpenAI({
           apps, provider keys for upstream.
         </p>
         <div className="mt-8 flex flex-wrap gap-2">
-          <Button size="lg" asChild>
+          <Button size="lg" className="text-white!" asChild>
             <Link href="/dashboard">Open developer console</Link>
           </Button>
           <Button variant="outline" size="lg" asChild>

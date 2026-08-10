@@ -15,7 +15,7 @@ export function CtaGroup({
 
   return (
     <div className={`flex flex-wrap items-center gap-3 ${className}`}>
-      <Button size="lg" className="uppercase tracking-[0.12em]" asChild>
+      <Button size="lg" className="uppercase tracking-[0.12em] text-white!" asChild>
         <a
           href={siteConfig.githubUrl}
           rel="noopener noreferrer"

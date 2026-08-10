@@ -90,7 +90,7 @@ export function SiteHeader() {
               GitHub
             </a>
           </Button>
-          <Button size="sm" className="uppercase tracking-[0.12em]" asChild>
+          <Button size="sm" className="uppercase tracking-[0.12em] text-white!" asChild>
             <Link href="/portal">Portal</Link>
           </Button>
         </div>
