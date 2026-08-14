@@ -2,14 +2,28 @@
 
 import { useState } from "react";
 import { usePortal } from "@/components/portal/PortalWorkspace";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Button } from "@/components/ui/button";
 import {
-  Alert,
-  Button,
-  ConfirmDialog,
-  EmptyState,
-  StatusBadge,
-} from "@/components/ui/PortalUI";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { ToneAlert } from "@/components/ui/tone-alert";
 import { tgPortalFetch } from "@/lib/tokenguard-api";
+import { CopyIcon, KeyRoundIcon } from "lucide-react";
 
 export function KeysView() {
   const { me, getToken, refreshMe, setError, setNotice } = usePortal();
@@ -75,34 +89,47 @@ export function KeysView() {
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-signal">
             Personal access
           </p>
-          <h1 className="mt-1 font-display text-3xl font-bold">API keys</h1>
-          <p className="mt-2 text-sm text-muted">
+          <h1 className="mt-1 font-display text-3xl font-bold tracking-tight">
+            API keys
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
             Keys belong to you. A team is selected per request with{" "}
             <code>X-TokenGuard-Team-ID</code>.
           </p>
         </div>
-        <Button onClick={() => void createKey()} disabled={!canCreate || busy === "create"}>
+        <Button
+          size="lg"
+          onClick={() => void createKey()}
+          disabled={!canCreate || busy === "create"}
+        >
+          <KeyRoundIcon data-icon="inline-start" />
           {busy === "create" ? "Creating…" : "Create key"}
         </Button>
       </header>
 
       {!canCreate ? (
-        <Alert tone="warning">
+        <ToneAlert tone="warning" title="Key limit reached">
           You reached the limit of {maxKeys} active keys. Revoke an unused key
           before creating another.
-        </Alert>
+        </ToneAlert>
       ) : null}
 
       {newKey ? (
-        <Alert tone="success">
-          <p className="font-semibold">Copy this key now. It will not be shown again.</p>
-          <code className="mt-2 block break-all rounded bg-panel/70 p-3 text-xs">
+        <ToneAlert tone="success" title="Copy this key now">
+          <p className="mb-2">It will not be shown again.</p>
+          <code className="mt-1 block break-all rounded-md bg-panel/80 p-3 font-mono text-xs text-text">
             {newKey}
           </code>
-          <Button variant="secondary" className="mt-3" onClick={() => void copyKey()}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => void copyKey()}
+          >
+            <CopyIcon data-icon="inline-start" />
             {copied ? "Copied" : "Copy key"}
           </Button>
-        </Alert>
+        </ToneAlert>
       ) : null}
 
       {keys.length === 0 ? (
@@ -110,56 +137,88 @@ export function KeysView() {
           title="Create your first API key"
           description="Your application sends this key to TokenGuard. Provider credentials remain separate and are forwarded upstream."
           action={
-            <Button onClick={() => void createKey()} disabled={!canCreate || busy === "create"}>
+            <Button
+              size="lg"
+              onClick={() => void createKey()}
+              disabled={!canCreate || busy === "create"}
+            >
               Create key
             </Button>
           }
         />
       ) : (
-        <section aria-labelledby="key-list-heading">
-          <h2 id="key-list-heading" className="font-display text-lg font-semibold">
-            Your keys
-          </h2>
-          <ul className="mt-4 divide-y divide-line border-y border-line">
-            {keys.map((key) => (
-              <li key={key.id} className="flex flex-wrap items-center justify-between gap-4 py-4">
-                <div>
-                  <p className="font-semibold text-text">{key.name || "API key"}</p>
-                  <p className="mt-1 font-mono text-xs text-muted">
-                    {key.key_prefix || "tg_"}… · created{" "}
-                    {key.created_at
-                      ? new Date(key.created_at).toLocaleDateString()
-                      : "—"}
-                  </p>
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-display text-lg">Your keys</CardTitle>
+            <CardDescription>
+              Prefix only is stored in the UI after creation. Revoking is immediate.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-0 px-0">
+            {keys.map((key, index) => (
+              <div key={key.id}>
+                {index > 0 ? <Separator /> : null}
+                <div className="flex flex-wrap items-center justify-between gap-4 px-(--card-spacing) py-4">
+                  <div>
+                    <p className="font-semibold text-text">{key.name || "API key"}</p>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">
+                      {key.key_prefix || "tg_"}… · created{" "}
+                      {key.created_at
+                        ? new Date(key.created_at).toLocaleDateString()
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <StatusBadge status={key.status || "unknown"} />
+                    {key.status === "active" ? (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() =>
+                          setRevoke({ id: key.id, name: key.name || "API key" })
+                        }
+                      >
+                        Revoke
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={key.status || "unknown"} />
-                  {key.status === "active" ? (
-                    <Button
-                      variant="danger"
-                      onClick={() =>
-                        setRevoke({ id: key.id, name: key.name || "API key" })
-                      }
-                    >
-                      Revoke
-                    </Button>
-                  ) : null}
-                </div>
-              </li>
+              </div>
             ))}
-          </ul>
-        </section>
+          </CardContent>
+        </Card>
       )}
 
-      <ConfirmDialog
+      <Dialog
         open={Boolean(revoke)}
-        title="Revoke API key?"
-        description={`Applications using ${revoke?.name || "this key"} will immediately fail authentication. This cannot be undone.`}
-        confirmLabel="Revoke key"
-        busy={Boolean(revoke && busy === revoke.id)}
-        onClose={() => setRevoke(null)}
-        onConfirm={() => void revokeKey()}
-      />
+        onOpenChange={(open) => !open && setRevoke(null)}
+      >
+        <DialogContent showCloseButton={!Boolean(revoke && busy === revoke.id)}>
+          <DialogHeader>
+            <DialogTitle>Revoke API key?</DialogTitle>
+            <DialogDescription>
+              Applications using {revoke?.name || "this key"} will immediately fail
+              authentication. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRevoke(null)}
+              disabled={Boolean(revoke && busy === revoke.id)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void revokeKey()}
+              disabled={Boolean(revoke && busy === revoke.id)}
+            >
+              {revoke && busy === revoke.id ? "Working…" : "Revoke key"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

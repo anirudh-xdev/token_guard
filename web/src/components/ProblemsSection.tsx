@@ -2,7 +2,7 @@ import { problems } from "@/lib/problems";
 
 export function ProblemsSection() {
   return (
-    <section id="problems" className="border-t border-line bg-panel">
+    <section id="problems" className="border-t border-border bg-card">
       <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 sm:py-28">
         <div className="max-w-2xl">
           <p className="text-[0.7rem] uppercase tracking-[0.18em] text-signal">
@@ -11,7 +11,7 @@ export function ProblemsSection() {
           <h2 className="font-display mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">
             Four ways LLM spend goes blind — and how TokenGuard stops them.
           </h2>
-          <p className="mt-4 text-sm leading-relaxed text-muted sm:text-base">
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground sm:text-base">
             One proxy. Fail closed. Money as micro-USD integers. No guessing
             model prices.
           </p>
@@ -34,7 +34,7 @@ export function ProblemsSection() {
                 <p className="mt-3 max-w-xl text-sm leading-relaxed text-text-dim">
                   {p.problem}
                 </p>
-                <p className="mt-2 max-w-xl text-xs text-muted">
+                <p className="mt-2 max-w-xl text-xs text-muted-foreground">
                   <span className="font-medium text-signal">When:</span> {p.when}
                 </p>
                 <p className="mt-4 max-w-xl text-sm leading-relaxed text-text">

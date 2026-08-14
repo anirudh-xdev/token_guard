@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
   /* Light · cool mint paper (not warm cream / not purple) */
@@ -6,7 +10,6 @@
   --ink-2: #eef5f1;
   --panel: #ffffff;
   --line: rgba(8, 32, 24, 0.1);
-  --muted: #5a6f66;
   --text: #071410;
   --text-dim: #2a3d36;
   --signal: #067a52;
@@ -26,6 +29,40 @@
   --shadow-sm: 0 1px 2px rgba(7, 20, 16, 0.04);
   --shadow-md: 0 8px 28px rgba(7, 20, 16, 0.06), 0 2px 8px rgba(7, 20, 16, 0.03);
   --shadow-lg: 0 24px 48px rgba(7, 20, 16, 0.08), 0 8px 16px rgba(6, 122, 82, 0.04);
+
+  /* shadcn tokens ← TokenGuard mint */
+  --background: var(--ink);
+  --foreground: var(--text);
+  --card: var(--panel);
+  --card-foreground: var(--text);
+  --popover: var(--panel);
+  --popover-foreground: var(--text);
+  --primary: var(--signal);
+  --primary-foreground: var(--on-signal);
+  --secondary: var(--ink-2);
+  --secondary-foreground: var(--text);
+  --muted: var(--ink-2);
+  --muted-foreground: var(--text-dim);
+  --accent: var(--signal-dim);
+  --accent-foreground: var(--signal);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--signal);
+  --chart-1: var(--signal);
+  --chart-2: var(--info);
+  --chart-3: var(--warn);
+  --chart-4: #0a7a6a;
+  --chart-5: var(--text-dim);
+  --radius: 0.5rem;
+  --sidebar: var(--panel);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--signal);
+  --sidebar-primary-foreground: var(--on-signal);
+  --sidebar-accent: var(--ink-2);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--signal);
 }
 
 @theme inline {
@@ -50,6 +87,45 @@
   --color-code-text: var(--code-text);
   --font-display: var(--font-syne);
   --font-mono: var(--font-plex-mono);
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 * {
@@ -66,7 +142,9 @@ body {
   min-height: 100%;
   background: var(--ink);
   color: var(--text);
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -244,5 +322,54 @@ textarea:disabled {
   .anim-step,
   .anim-pulse {
     animation: none;
+  }
+}
+
+/* Product is light-only; keep .dark tokens aligned if a component ever nests under .dark */
+.dark {
+  --background: #0b1d17;
+  --foreground: #e8f8f1;
+  --card: #122820;
+  --card-foreground: #e8f8f1;
+  --popover: #122820;
+  --popover-foreground: #e8f8f1;
+  --primary: var(--signal-bright);
+  --primary-foreground: #062018;
+  --secondary: #1a3329;
+  --secondary-foreground: #e8f8f1;
+  --muted: #1a3329;
+  --muted-foreground: #9bb5aa;
+  --accent: rgba(10, 154, 104, 0.18);
+  --accent-foreground: var(--signal-bright);
+  --destructive: #f07178;
+  --border: rgba(232, 248, 241, 0.12);
+  --input: rgba(232, 248, 241, 0.16);
+  --ring: var(--signal-bright);
+  --sidebar: #122820;
+  --sidebar-foreground: #e8f8f1;
+  --sidebar-primary: var(--signal-bright);
+  --sidebar-primary-foreground: #062018;
+  --sidebar-accent: #1a3329;
+  --sidebar-accent-foreground: #e8f8f1;
+  --sidebar-border: rgba(232, 248, 241, 0.12);
+  --sidebar-ring: var(--signal-bright);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply text-foreground;
+  }
+  code,
+  kbd,
+  samp,
+  pre,
+  .font-mono {
+    font-family: var(--font-plex-mono), ui-monospace, monospace;
   }
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   apiBaseUrl,
   mgmtFetch,
@@ -9,9 +10,49 @@ import {
   type MgmtUsageEvent,
   type MgmtUser,
 } from "@/lib/tokenguard-api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToneAlert } from "@/components/ui/tone-alert";
+import { cn } from "@/lib/utils";
+import { CopyIcon, LockIcon, RefreshCwIcon } from "lucide-react";
 
 type View = "start" | "integrate" | "users" | "pricing" | "usage";
 type SnippetLang = "curl" | "node" | "python";
+
+const navItems: { id: View; label: string }[] = [
+  { id: "start", label: "Start" },
+  { id: "integrate", label: "Integrate" },
+  { id: "users", label: "Users" },
+  { id: "pricing", label: "Pricing" },
+  { id: "usage", label: "Usage" },
+];
 
 function formatUSD(micro: number | undefined) {
   return `$${((Number(micro) || 0) / 1_000_000).toFixed(4)}`;
@@ -81,7 +122,9 @@ export function DashboardApp() {
       setProvider(data.default_provider || "—");
       setModelsCount(`${(data.models_priced || []).length} configured`);
     } catch (e) {
-      setInfoJson(`Failed to load discovery doc: ${e instanceof Error ? e.message : String(e)}`);
+      setInfoJson(
+        `Failed to load discovery doc: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }, [apiBase]);
 
@@ -95,20 +138,17 @@ export function DashboardApp() {
     }
   }, [apiBase]);
 
-  const loadDashboardData = useCallback(
-    async (secret: string) => {
-      setGlobalErr("");
-      const [uRes, rRes] = await Promise.all([
-        mgmtFetch<{ users?: MgmtUser[] }>("/mgmt/users", secret),
-        mgmtFetch<{ events?: MgmtUsageEvent[] }>("/mgmt/usage?limit=25", secret),
-      ]);
-      if (!uRes.ok) throw new Error(uRes.data.error || "Failed to list users");
-      if (!rRes.ok) throw new Error(rRes.data.error || "Failed to list usage");
-      setUsers(uRes.data.users || []);
-      setUsage(rRes.data.events || []);
-    },
-    [],
-  );
+  const loadDashboardData = useCallback(async (secret: string) => {
+    setGlobalErr("");
+    const [uRes, rRes] = await Promise.all([
+      mgmtFetch<{ users?: MgmtUser[] }>("/mgmt/users", secret),
+      mgmtFetch<{ events?: MgmtUsageEvent[] }>("/mgmt/usage?limit=25", secret),
+    ]);
+    if (!uRes.ok) throw new Error(uRes.data.error || "Failed to list users");
+    if (!rRes.ok) throw new Error(rRes.data.error || "Failed to list usage");
+    setUsers(uRes.data.users || []);
+    setUsage(rRes.data.events || []);
+  }, []);
 
   const loadPricing = useCallback(async (secret: string) => {
     setGlobalErr("");
@@ -156,12 +196,14 @@ export function DashboardApp() {
     setView("start");
   }
 
-  function nav(name: View | "lock") {
-    if (name === "lock") {
-      lockConsole();
-      return;
-    }
-    setView(name);
+  function openProvision() {
+    setProvisionOpen(true);
+    setProvisionDone(false);
+    setProvisionErr("");
+    setNewKey("");
+    setProvName("");
+    setProvEmail("");
+    setProvBudget("1");
   }
 
   const snippet = useMemo(() => {
@@ -266,6 +308,7 @@ res = client.chat.completions.create(
     }
     setBudgetOpen(false);
     await loadDashboardData(admin);
+    toast.success("Budget updated.");
   }
 
   async function submitPrice() {
@@ -292,6 +335,7 @@ res = client.chat.completions.create(
     setPriceOpen(false);
     await loadPricing(admin);
     await loadInfo();
+    toast.success("Price saved.");
   }
 
   async function deletePrice(modelKey: string) {
@@ -306,6 +350,7 @@ res = client.chat.completions.create(
     }
     await loadPricing(admin);
     await loadInfo();
+    toast.success(`Deleted ${modelKey}.`);
   }
 
   async function syncOpenRouter() {
@@ -328,647 +373,803 @@ res = client.chat.completions.create(
     }
     await loadPricing(admin);
     await loadInfo();
-    alert(
-      `Imported ${res.data.imported || 0} price rows from live OpenRouter catalog. Catalog size: ${res.data.models_priced ?? "—"}`,
+    toast.success(
+      `Imported ${res.data.imported || 0} rows. Catalog: ${res.data.models_priced ?? "—"}`,
     );
   }
 
   if (!unlocked) {
     return (
-      <div className="tg-console">
-        <div className="unlock">
-          <div className="unlock-card">
-            <div className="brand">TokenGuard console</div>
-            <h1>Developer access</h1>
-            <p>
+      <div className="atmosphere grid min-h-screen place-items-center px-5 py-16">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-signal">
+              TokenGuard console
+            </p>
+            <CardTitle className="font-display text-2xl">Developer access</CardTitle>
+            <CardDescription>
               Enter the server admin secret to manage users and copy integration
               snippets. This secret never goes to end users.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {unlockErr ? (
+              <ToneAlert tone="error" title="Unlock failed">
+                {unlockErr}
+              </ToneAlert>
+            ) : null}
+            <div className="grid gap-1.5">
+              <Label htmlFor="admin-input">Admin secret</Label>
+              <Input
+                id="admin-input"
+                type="password"
+                autoComplete="current-password"
+                placeholder="TOKENGUARD_ADMIN_SECRET"
+                className="h-10"
+                value={adminInput}
+                onChange={(e) => setAdminInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void unlock(adminInput.trim());
+                }}
+              />
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              The admin secret is kept in memory only and is cleared when this tab
+              is refreshed or closed. Do not use this console on a shared device.
             </p>
-            {unlockErr ? <div className="err">{unlockErr}</div> : null}
-            <label htmlFor="admin-input">Admin secret</label>
-            <input
-              id="admin-input"
-              type="password"
-              autoComplete="current-password"
-              placeholder="TOKENGUARD_ADMIN_SECRET"
-              value={adminInput}
-              onChange={(e) => setAdminInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void unlock(adminInput.trim());
-              }}
-            />
-            <p className="kv" style={{ marginBottom: "1rem" }}>
-              The admin secret is kept in memory only and is cleared when this
-              tab is refreshed or closed. Do not use this console on a shared device.
-            </p>
-            <button
-              className="btn"
+            <Button
+              size="lg"
+              className="w-full"
               type="button"
-              style={{ width: "100%" }}
               onClick={() => void unlock(adminInput.trim())}
             >
               Unlock console
-            </button>
-            <p className="kv" style={{ marginTop: "1rem" }}>
+            </Button>
+            <p className="text-xs text-muted-foreground">
               Need the guide first?{" "}
-              <a href={docsUrl} target="_blank" rel="noreferrer">
+              <a
+                href={docsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-signal underline"
+              >
                 Open /docs
               </a>{" "}
               (no secret required).
             </p>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="tg-console">
-      <div className="layout">
-        <aside className="sidebar">
-          <div className="logo">TokenGuard</div>
-          {(
-            [
-              ["start", "Start"],
-              ["integrate", "Integrate"],
-              ["users", "Users"],
-              ["pricing", "Pricing"],
-              ["usage", "Usage"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              className={`nav-btn${view === id ? " active" : ""}`}
+    <div className="min-h-screen bg-ink">
+      <div className="mx-auto grid max-w-7xl lg:grid-cols-[14rem_minmax(0,1fr)]">
+        <aside className="border-b border-border bg-card px-4 py-5 lg:min-h-screen lg:border-b-0 lg:border-r">
+          <p className="font-display text-lg font-bold text-text">TokenGuard</p>
+          <p className="text-xs text-muted-foreground">Operator console</p>
+          <nav className="mt-5 flex gap-1 overflow-x-auto lg:flex-col" aria-label="Console">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setView(item.id)}
+                className={cn(
+                  "min-h-10 shrink-0 rounded-md px-3 py-2 text-left text-sm font-semibold",
+                  view === item.id
+                    ? "bg-signal-dim text-signal"
+                    : "text-text-dim hover:bg-muted hover:text-text",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 justify-start"
               type="button"
-              onClick={() => nav(id)}
+              onClick={lockConsole}
             >
-              {label}
-            </button>
-          ))}
-          <button className="nav-btn" type="button" onClick={() => nav("lock")}>
-            Lock console
-          </button>
-          <div className="foot">{apiBase}</div>
+              <LockIcon data-icon="inline-start" />
+              Lock console
+            </Button>
+          </nav>
+          <p className="mt-6 hidden break-all font-mono text-[0.65rem] text-muted-foreground lg:block">
+            {apiBase}
+          </p>
         </aside>
 
-        <main className="main">
-          {globalErr ? <div className="err">{globalErr}</div> : null}
+        <main className="min-w-0 px-5 py-7 sm:px-8 lg:px-10">
+          <div className="mx-auto max-w-5xl space-y-5">
+            {globalErr ? (
+              <ToneAlert tone="error" title="Request failed">
+                {globalErr}
+              </ToneAlert>
+            ) : null}
 
-          {view === "start" ? (
-            <section>
-              <div className="header">
-                <div>
-                  <h1>Start here</h1>
-                  <p>Provision a key, then point any OpenAI-compatible SDK at this host.</p>
-                </div>
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => {
-                    setProvisionOpen(true);
-                    setProvisionDone(false);
-                    setProvisionErr("");
-                    setNewKey("");
-                    setProvName("");
-                    setProvEmail("");
-                    setProvBudget("1");
-                  }}
-                >
-                  + Provision user
-                </button>
-              </div>
-              <div className="banner">
-                Auth model: admin secret unlocks this console · <code>tg_</code> keys
-                identify apps · provider keys still authenticate upstream. Nothing is
-                “open.”
-              </div>
-              <div className="panel">
-                <ol className="steps">
-                  <li>
-                    <strong>This host is your new base URL.</strong>
-                    <div className="mono">{apiBase}</div>
-                  </li>
-                  <li>
-                    <strong>Create a TokenGuard user key</strong> with Provision user
-                    (or API).
-                  </li>
-                  <li>
-                    <strong>Keep your provider API key</strong> (OpenAI / OpenRouter /
-                    Anthropic).
-                  </li>
-                  <li>
-                    <strong>Add headers</strong> <code>X-TokenGuard-API-Key</code>,
-                    optional provider + session id.
-                  </li>
-                  <li>
-                    <strong>Handle</strong> 401 / 400 / 402 / 409 in your client.
-                  </li>
-                </ol>
-              </div>
-              <div className="grid-2">
-                <div className="panel">
-                  <h2>Live service map</h2>
-                  <pre>{infoJson}</pre>
-                  <div className="toolbar">
-                    <button className="btn secondary small" type="button" onClick={() => void loadInfo()}>
-                      Refresh
-                    </button>
-                    <a className="btn ghost small" href={docsUrl} target="_blank" rel="noreferrer">
-                      Public docs
-                    </a>
+            {view === "start" ? (
+              <section className="space-y-5">
+                <header className="flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <h1 className="font-display text-3xl font-bold tracking-tight">
+                      Start here
+                    </h1>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Provision a key, then point any OpenAI-compatible SDK at this host.
+                    </p>
                   </div>
+                  <Button size="lg" type="button" onClick={openProvision}>
+                    + Provision user
+                  </Button>
+                </header>
+
+                <ToneAlert tone="info" title="Auth model">
+                  Admin secret unlocks this console · <code>tg_</code> keys identify
+                  apps · provider keys still authenticate upstream. Nothing is “open.”
+                </ToneAlert>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="font-display text-lg">Setup steps</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ol className="list-decimal space-y-3 pl-5 text-sm leading-6 text-muted-foreground">
+                      <li>
+                        <strong className="text-text">This host is your new base URL.</strong>
+                        <div className="mt-1 font-mono text-xs text-text">{apiBase}</div>
+                      </li>
+                      <li>
+                        <strong className="text-text">Create a TokenGuard user key</strong> with
+                        Provision user (or API).
+                      </li>
+                      <li>
+                        <strong className="text-text">Keep your provider API key</strong> (OpenAI
+                        / OpenRouter / Anthropic).
+                      </li>
+                      <li>
+                        <strong className="text-text">Add headers</strong>{" "}
+                        <code>X-TokenGuard-API-Key</code>, optional provider + session id.
+                      </li>
+                      <li>
+                        <strong className="text-text">Handle</strong> 401 / 400 / 402 / 409 in
+                        your client.
+                      </li>
+                    </ol>
+                  </CardContent>
+                </Card>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between gap-3">
+                      <CardTitle className="font-display text-lg">Live service map</CardTitle>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => void loadInfo()}
+                        >
+                          <RefreshCwIcon data-icon="inline-start" />
+                          Refresh
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={docsUrl} target="_blank" rel="noreferrer">
+                            Public docs
+                          </a>
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <pre className="max-h-80 overflow-auto rounded-lg bg-code p-4 text-xs leading-5 text-code-text">
+                        {infoJson}
+                      </pre>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="font-display text-lg">Quick checks</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      <p>
+                        <strong>Health:</strong>{" "}
+                        <span className="font-mono">{health}</span>
+                      </p>
+                      <p>
+                        <strong>Default provider:</strong>{" "}
+                        <span className="font-mono">{provider}</span>
+                      </p>
+                      <p>
+                        <strong>Priced models:</strong>{" "}
+                        <span className="font-mono">{modelsCount}</span>
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={() =>
+                          void loadDashboardData(admin).catch((e) =>
+                            setGlobalErr(e instanceof Error ? e.message : String(e)),
+                          )
+                        }
+                      >
+                        Refresh users & usage
+                      </Button>
+                    </CardContent>
+                  </Card>
                 </div>
-                <div className="panel">
-                  <h2>Quick checks</h2>
-                  <p className="kv">
-                    <strong>Health:</strong> <span>{health}</span>
+              </section>
+            ) : null}
+
+            {view === "integrate" ? (
+              <section className="space-y-5">
+                <header>
+                  <h1 className="font-display text-3xl font-bold tracking-tight">
+                    Integrate
+                  </h1>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Copy-paste snippets for this deployment. Paste your{" "}
+                    <code>tg_</code> key where shown.
                   </p>
-                  <p className="kv">
-                    <strong>Default provider:</strong> <span>{provider}</span>
-                  </p>
-                  <p className="kv">
-                    <strong>Priced models:</strong> <span>{modelsCount}</span>
-                  </p>
-                  <div className="toolbar">
-                    <button
-                      className="btn secondary small"
-                      type="button"
-                      onClick={() =>
-                        void loadDashboardData(admin).catch((e) =>
-                          setGlobalErr(e instanceof Error ? e.message : String(e)),
-                        )
-                      }
+                </header>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Snippet inputs</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="snippet-key">
+                        TokenGuard API key (optional — fills snippets)
+                      </Label>
+                      <Input
+                        id="snippet-key"
+                        type="text"
+                        placeholder="tg_..."
+                        className="h-10 font-mono"
+                        value={snippetKey}
+                        onChange={(e) => setSnippetKey(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="snippet-provider">Provider</Label>
+                      <Input
+                        id="snippet-provider"
+                        type="text"
+                        className="h-10"
+                        value={snippetProvider}
+                        onChange={(e) => setSnippetProvider(e.target.value)}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Request example</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Tabs
+                      value={snippetLang}
+                      onValueChange={(value) => setSnippetLang(value as SnippetLang)}
                     >
-                      Refresh users & usage
-                    </button>
+                      <TabsList>
+                        <TabsTrigger value="curl">curl</TabsTrigger>
+                        <TabsTrigger value="node">Node</TabsTrigger>
+                        <TabsTrigger value="python">Python</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value={snippetLang} className="mt-4">
+                        <pre className="overflow-x-auto rounded-lg bg-code p-5 text-xs leading-6 text-code-text">
+                          <code>{snippet}</code>
+                        </pre>
+                      </TabsContent>
+                    </Tabs>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(snippet);
+                        toast.success("Snippet copied.");
+                      }}
+                    >
+                      <CopyIcon data-icon="inline-start" />
+                      Copy
+                    </Button>
+                  </CardContent>
+                </Card>
+              </section>
+            ) : null}
+
+            {view === "users" ? (
+              <section className="space-y-5">
+                <header className="flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <h1 className="font-display text-3xl font-bold tracking-tight">
+                      Users
+                    </h1>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Budgets are in USD (stored as micro-USD server-side). Extend a
+                      limit when a user hits the wall.
+                    </p>
                   </div>
-                </div>
-              </div>
-            </section>
-          ) : null}
+                  <Button size="lg" type="button" onClick={openProvision}>
+                    + Provision user
+                  </Button>
+                </header>
 
-          {view === "integrate" ? (
-            <section>
-              <div className="header">
-                <div>
-                  <h1>Integrate</h1>
-                  <p>
-                    Copy-paste snippets for this deployment. Paste your <code>tg_</code>{" "}
-                    key where shown.
-                  </p>
-                </div>
-              </div>
-              <div className="panel">
-                <label htmlFor="snippet-key">TokenGuard API key (optional — fills snippets)</label>
-                <input
-                  id="snippet-key"
-                  type="text"
-                  placeholder="tg_..."
-                  value={snippetKey}
-                  onChange={(e) => setSnippetKey(e.target.value)}
-                />
-                <label htmlFor="snippet-provider">Provider</label>
-                <input
-                  id="snippet-provider"
-                  type="text"
-                  value={snippetProvider}
-                  onChange={(e) => setSnippetProvider(e.target.value)}
-                />
-              </div>
-              <div className="panel">
-                <div className="tabs">
-                  {(["curl", "node", "python"] as const).map((lang) => (
-                    <button
-                      key={lang}
-                      className={`tab${snippetLang === lang ? " active" : ""}`}
+                <Card>
+                  <CardContent className="pt-(--card-spacing)">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Budget</TableHead>
+                          <TableHead>Spent</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {users.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-muted-foreground">
+                              No users yet. Provision one to get a tg_ key.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          users.map((u) => (
+                            <TableRow key={u.user_id}>
+                              <TableCell>
+                                <div className="font-medium">{u.name || "—"}</div>
+                                <div className="font-mono text-xs text-muted-foreground">
+                                  {u.user_id}
+                                </div>
+                              </TableCell>
+                              <TableCell>{u.email}</TableCell>
+                              <TableCell className="font-mono">
+                                {formatUSD(u.limit_microusd)}
+                              </TableCell>
+                              <TableCell className="font-mono">
+                                {formatUSD(u.spent_microusd)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => {
+                                    setBudgetUserId(u.user_id);
+                                    setBudgetUsd(
+                                      String(Number(u.limit_microusd) / 1_000_000),
+                                    );
+                                    setBudgetReset(false);
+                                    setBudgetErr("");
+                                    setBudgetOpen(true);
+                                  }}
+                                >
+                                  Edit
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </section>
+            ) : null}
+
+            {view === "pricing" ? (
+              <section className="space-y-5">
+                <header className="flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <h1 className="font-display text-3xl font-bold tracking-tight">
+                      Pricing
+                    </h1>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Live catalog in Turso. Enter rates as{" "}
+                      <strong>$ per 1M tokens</strong>. Sync OpenRouter for real market
+                      prices.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
                       type="button"
-                      onClick={() => setSnippetLang(lang)}
+                      onClick={() => void syncOpenRouter()}
                     >
-                      {lang === "node" ? "Node" : lang === "python" ? "Python" : "curl"}
-                    </button>
-                  ))}
-                </div>
-                <pre>{snippet}</pre>
-                <div className="toolbar">
-                  <button
-                    className="btn secondary small"
+                      Sync OpenRouter
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setPriceKey("");
+                        setPriceIn("");
+                        setPriceOut("");
+                        setPriceErr("");
+                        setPriceOpen(true);
+                      }}
+                    >
+                      + Add / edit model
+                    </Button>
+                  </div>
+                </header>
+
+                <Card>
+                  <CardHeader>
+                    <div className="grid max-w-md gap-1.5">
+                      <Label htmlFor="price-search">Search</Label>
+                      <Input
+                        id="price-search"
+                        type="text"
+                        placeholder="gpt-4o, openrouter/…"
+                        className="h-10"
+                        value={priceSearch}
+                        onChange={(e) => setPriceSearch(e.target.value)}
+                      />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Model key</TableHead>
+                          <TableHead>Input $/1M</TableHead>
+                          <TableHead>Output $/1M</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredPrices.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-muted-foreground">
+                              No prices yet. Add one or Sync OpenRouter.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filteredPrices.map((p) => (
+                            <TableRow key={p.model_key}>
+                              <TableCell className="font-mono">{p.model_key}</TableCell>
+                              <TableCell className="font-mono">
+                                ${perMillion(p, "input").toFixed(4)}
+                              </TableCell>
+                              <TableCell className="font-mono">
+                                ${perMillion(p, "output").toFixed(4)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <span className="inline-flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    type="button"
+                                    onClick={() => {
+                                      setPriceKey(p.model_key);
+                                      setPriceIn(String(perMillion(p, "input")));
+                                      setPriceOut(String(perMillion(p, "output")));
+                                      setPriceErr("");
+                                      setPriceOpen(true);
+                                    }}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    type="button"
+                                    onClick={() => void deletePrice(p.model_key)}
+                                  >
+                                    Delete
+                                  </Button>
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </section>
+            ) : null}
+
+            {view === "usage" ? (
+              <section className="space-y-5">
+                <header className="flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <h1 className="font-display text-3xl font-bold tracking-tight">
+                      Usage
+                    </h1>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Recent proxy events across users.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
                     type="button"
-                    onClick={() => void navigator.clipboard.writeText(snippet)}
+                    onClick={() =>
+                      void loadDashboardData(admin).catch((e) =>
+                        setGlobalErr(e instanceof Error ? e.message : String(e)),
+                      )
+                    }
                   >
-                    Copy
-                  </button>
-                </div>
-              </div>
-            </section>
-          ) : null}
+                    <RefreshCwIcon data-icon="inline-start" />
+                    Refresh
+                  </Button>
+                </header>
 
-          {view === "users" ? (
-            <section>
-              <div className="header">
-                <div>
-                  <h1>Users</h1>
-                  <p>
-                    Budgets are in USD (stored as micro-USD server-side). Extend a limit
-                    when a user hits the wall.
-                  </p>
-                </div>
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => {
-                    setProvisionOpen(true);
-                    setProvisionDone(false);
-                    setProvisionErr("");
-                    setNewKey("");
-                  }}
-                >
-                  + Provision user
-                </button>
-              </div>
-              <div className="panel">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Email</th>
-                      <th>Budget</th>
-                      <th>Spent</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="kv">
-                          No users yet. Provision one to get a tg_ key.
-                        </td>
-                      </tr>
-                    ) : (
-                      users.map((u) => (
-                        <tr key={u.user_id}>
-                          <td>
-                            <div>{u.name || "—"}</div>
-                            <div className="mono kv">{u.user_id}</div>
-                          </td>
-                          <td>{u.email}</td>
-                          <td>{formatUSD(u.limit_microusd)}</td>
-                          <td>{formatUSD(u.spent_microusd)}</td>
-                          <td>
-                            <button
-                              className="btn secondary small"
-                              type="button"
-                              onClick={() => {
-                                setBudgetUserId(u.user_id);
-                                setBudgetUsd(String(Number(u.limit_microusd) / 1_000_000));
-                                setBudgetReset(false);
-                                setBudgetErr("");
-                                setBudgetOpen(true);
-                              }}
-                            >
-                              Edit
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
+                <Card>
+                  <CardContent className="pt-(--card-spacing)">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Model</TableHead>
+                          <TableHead>User</TableHead>
+                          <TableHead>Tokens in/out</TableHead>
+                          <TableHead>Cost</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {usage.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-muted-foreground">
+                              No usage yet.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          usage.map((e, i) => (
+                            <TableRow key={`${e.user_id}-${e.model}-${i}`}>
+                              <TableCell className="font-medium">
+                                {e.model || "—"}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {e.user_id || "—"}
+                              </TableCell>
+                              <TableCell className="font-mono">
+                                {e.input_tokens ?? 0} / {e.output_tokens ?? 0}
+                              </TableCell>
+                              <TableCell className="font-mono">
+                                {formatUSD(e.actual_cost_microusd)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    e.status === "completed" ? "default" : "destructive"
+                                  }
+                                >
+                                  {e.status}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </section>
+            ) : null}
 
-          {view === "pricing" ? (
-            <section>
-              <div className="header">
-                <div>
-                  <h1>Pricing</h1>
-                  <p>
-                    Live catalog in Turso. Enter rates as <strong>$ per 1M tokens</strong>.
-                    Sync OpenRouter for real market prices.
-                  </p>
-                </div>
-                <div className="toolbar" style={{ marginTop: 0 }}>
-                  <button className="btn secondary" type="button" onClick={() => void syncOpenRouter()}>
-                    Sync OpenRouter
-                  </button>
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={() => {
-                      setPriceKey("");
-                      setPriceIn("");
-                      setPriceOut("");
-                      setPriceErr("");
-                      setPriceOpen(true);
-                    }}
-                  >
-                    + Add / edit model
-                  </button>
-                </div>
-              </div>
-              <div className="panel">
-                <label htmlFor="price-search">Search</label>
-                <input
-                  id="price-search"
-                  type="text"
-                  placeholder="gpt-4o, openrouter/…"
-                  value={priceSearch}
-                  onChange={(e) => setPriceSearch(e.target.value)}
-                />
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Model key</th>
-                      <th>Input $/1M</th>
-                      <th>Output $/1M</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPrices.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="kv">
-                          No prices yet. Add one or Sync OpenRouter.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredPrices.map((p) => (
-                        <tr key={p.model_key}>
-                          <td className="mono">{p.model_key}</td>
-                          <td>${perMillion(p, "input").toFixed(4)}</td>
-                          <td>${perMillion(p, "output").toFixed(4)}</td>
-                          <td>
-                            <button
-                              className="btn secondary small"
-                              type="button"
-                              onClick={() => {
-                                setPriceKey(p.model_key);
-                                setPriceIn(String(perMillion(p, "input")));
-                                setPriceOut(String(perMillion(p, "output")));
-                                setPriceErr("");
-                                setPriceOpen(true);
-                              }}
-                            >
-                              Edit
-                            </button>{" "}
-                            <button
-                              className="btn ghost small"
-                              type="button"
-                              onClick={() => void deletePrice(p.model_key)}
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
-
-          {view === "usage" ? (
-            <section>
-              <div className="header">
-                <div>
-                  <h1>Usage</h1>
-                  <p>Recent proxy events across users.</p>
-                </div>
-                <button
-                  className="btn secondary"
-                  type="button"
-                  onClick={() =>
-                    void loadDashboardData(admin).catch((e) =>
-                      setGlobalErr(e instanceof Error ? e.message : String(e)),
-                    )
-                  }
-                >
-                  Refresh
-                </button>
-              </div>
-              <div className="panel">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Model</th>
-                      <th>User</th>
-                      <th>Tokens in/out</th>
-                      <th>Cost</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usage.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="kv">
-                          No usage yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      usage.map((e, i) => (
-                        <tr key={`${e.user_id}-${e.model}-${i}`}>
-                          <td>
-                            <strong>{e.model || "—"}</strong>
-                          </td>
-                          <td className="mono">{e.user_id || "—"}</td>
-                          <td>
-                            {e.input_tokens ?? 0} / {e.output_tokens ?? 0}
-                          </td>
-                          <td>{formatUSD(e.actual_cost_microusd)}</td>
-                          <td>
-                            <span className={`badge ${e.status === "completed" ? "ok" : "bad"}`}>
-                              {e.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
-
-          <p className="kv" style={{ marginTop: "2rem" }}>
-            Product portal: <Link href="/portal">/portal</Link>
-          </p>
+            <p className="text-xs text-muted-foreground">
+              Product portal:{" "}
+              <Link href="/portal" className="font-semibold text-signal underline">
+                /portal
+              </Link>
+            </p>
+          </div>
         </main>
       </div>
 
-      {provisionOpen ? (
-        <div className="backdrop">
-          <div className="modal">
-            <h2>Provision user</h2>
-            {provisionErr ? <div className="err">{provisionErr}</div> : null}
-            {provisionDone ? (
-              <>
-                <div className="success-box">
-                  <strong>Save this key now — it is shown once.</strong>
-                  <code>{newKey}</code>
-                  <div className="toolbar">
-                    <button
-                      className="btn secondary small"
-                      type="button"
-                      onClick={() => void navigator.clipboard.writeText(newKey)}
-                    >
-                      Copy key
-                    </button>
-                    <button
-                      className="btn secondary small"
-                      type="button"
-                      onClick={() => {
-                        setSnippetKey(newKey);
-                        setProvisionOpen(false);
-                        setView("integrate");
-                      }}
-                    >
-                      Use in Integrate tab
-                    </button>
-                  </div>
-                </div>
-                <div className="modal-actions">
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={() => {
-                      setProvisionOpen(false);
-                      void loadDashboardData(admin);
-                    }}
-                  >
-                    Done
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <label htmlFor="input-name">Name</label>
-                <input
+      <Dialog open={provisionOpen} onOpenChange={setProvisionOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Provision user</DialogTitle>
+            <DialogDescription>
+              Creates a user and returns a plaintext <code>tg_</code> key once.
+            </DialogDescription>
+          </DialogHeader>
+          {provisionErr ? (
+            <ToneAlert tone="error">{provisionErr}</ToneAlert>
+          ) : null}
+          {provisionDone ? (
+            <div className="space-y-3">
+              <ToneAlert tone="success" title="Save this key now">
+                It is shown once.
+                <code className="mt-2 block break-all rounded-md bg-muted p-3 font-mono text-xs text-text">
+                  {newKey}
+                </code>
+              </ToneAlert>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(newKey);
+                    toast.success("Key copied.");
+                  }}
+                >
+                  <CopyIcon data-icon="inline-start" />
+                  Copy key
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    setSnippetKey(newKey);
+                    setProvisionOpen(false);
+                    setView("integrate");
+                  }}
+                >
+                  Use in Integrate tab
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setProvisionOpen(false);
+                    void loadDashboardData(admin);
+                  }}
+                >
+                  Done
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="input-name">Name</Label>
+                <Input
                   id="input-name"
                   type="text"
                   placeholder="Acme Agent"
+                  className="h-10"
                   value={provName}
                   onChange={(e) => setProvName(e.target.value)}
                 />
-                <label htmlFor="input-email">Email</label>
-                <input
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="input-email">Email</Label>
+                <Input
                   id="input-email"
                   type="email"
                   placeholder="dev@acme.com"
+                  className="h-10"
                   value={provEmail}
                   onChange={(e) => setProvEmail(e.target.value)}
                 />
-                <label htmlFor="input-budget">Budget (USD)</label>
-                <input
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="input-budget">Budget (USD)</Label>
+                <Input
                   id="input-budget"
                   type="number"
                   min={0.01}
                   step={0.01}
+                  className="h-10"
                   value={provBudget}
                   onChange={(e) => setProvBudget(e.target.value)}
                 />
-                <div className="modal-actions">
-                  <button className="btn ghost" type="button" onClick={() => setProvisionOpen(false)}>
-                    Cancel
-                  </button>
-                  <button className="btn" type="button" onClick={() => void submitProvision()}>
-                    Create user & key
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setProvisionOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="button" onClick={() => void submitProvision()}>
+                  Create user & key
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
-      {budgetOpen ? (
-        <div className="backdrop">
-          <div className="modal">
-            <h2>Edit budget</h2>
-            {budgetErr ? <div className="err">{budgetErr}</div> : null}
-            <p className="kv mono">{budgetUserId}</p>
-            <label htmlFor="budget-usd">New limit (USD)</label>
-            <input
-              id="budget-usd"
-              type="number"
-              min={0.01}
-              step={0.01}
-              value={budgetUsd}
-              onChange={(e) => setBudgetUsd(e.target.value)}
-            />
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                fontWeight: 500,
-                marginBottom: "1rem",
-              }}
-            >
-              <input
-                type="checkbox"
+      <Dialog open={budgetOpen} onOpenChange={setBudgetOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit budget</DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              {budgetUserId}
+            </DialogDescription>
+          </DialogHeader>
+          {budgetErr ? <ToneAlert tone="error">{budgetErr}</ToneAlert> : null}
+          <div className="space-y-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="budget-usd">New limit (USD)</Label>
+              <Input
+                id="budget-usd"
+                type="number"
+                min={0.01}
+                step={0.01}
+                className="h-10"
+                value={budgetUsd}
+                onChange={(e) => setBudgetUsd(e.target.value)}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <Checkbox
                 checked={budgetReset}
-                onChange={(e) => setBudgetReset(e.target.checked)}
+                onCheckedChange={(checked) => setBudgetReset(checked === true)}
               />
               Also reset spent to $0 (fresh period)
             </label>
-            <div className="modal-actions">
-              <button className="btn ghost" type="button" onClick={() => setBudgetOpen(false)}>
-                Cancel
-              </button>
-              <button className="btn" type="button" onClick={() => void submitBudget()}>
-                Save budget
-              </button>
-            </div>
           </div>
-        </div>
-      ) : null}
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => setBudgetOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitBudget()}>
+              Save budget
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {priceOpen ? (
-        <div className="backdrop">
-          <div className="modal">
-            <h2>Model price</h2>
-            {priceErr ? <div className="err">{priceErr}</div> : null}
-            <label htmlFor="price-key">Model key</label>
-            <input
-              id="price-key"
-              type="text"
-              placeholder="gpt-4o-mini or openrouter/openai/gpt-4o-mini"
-              value={priceKey}
-              onChange={(e) => setPriceKey(e.target.value)}
-            />
-            <label htmlFor="price-in">Input ($ per 1M tokens)</label>
-            <input
-              id="price-in"
-              type="number"
-              min={0}
-              step={0.0001}
-              value={priceIn}
-              onChange={(e) => setPriceIn(e.target.value)}
-            />
-            <label htmlFor="price-out">Output ($ per 1M tokens)</label>
-            <input
-              id="price-out"
-              type="number"
-              min={0}
-              step={0.0001}
-              value={priceOut}
-              onChange={(e) => setPriceOut(e.target.value)}
-            />
-            <p className="kv">
+      <Dialog open={priceOpen} onOpenChange={setPriceOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Model price</DialogTitle>
+            <DialogDescription>
               Example: gpt-4o-mini is $0.15 input / $0.60 output per 1M tokens.
-            </p>
-            <div className="modal-actions">
-              <button className="btn ghost" type="button" onClick={() => setPriceOpen(false)}>
-                Cancel
-              </button>
-              <button className="btn" type="button" onClick={() => void submitPrice()}>
-                Save
-              </button>
+            </DialogDescription>
+          </DialogHeader>
+          {priceErr ? <ToneAlert tone="error">{priceErr}</ToneAlert> : null}
+          <div className="space-y-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="price-key">Model key</Label>
+              <Input
+                id="price-key"
+                type="text"
+                placeholder="gpt-4o-mini or openrouter/openai/gpt-4o-mini"
+                className="h-10 font-mono"
+                value={priceKey}
+                onChange={(e) => setPriceKey(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="price-in">Input ($ per 1M tokens)</Label>
+              <Input
+                id="price-in"
+                type="number"
+                min={0}
+                step={0.0001}
+                className="h-10"
+                value={priceIn}
+                onChange={(e) => setPriceIn(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="price-out">Output ($ per 1M tokens)</Label>
+              <Input
+                id="price-out"
+                type="number"
+                min={0}
+                step={0.0001}
+                className="h-10"
+                value={priceOut}
+                onChange={(e) => setPriceOut(e.target.value)}
+              />
             </div>
           </div>
-        </div>
-      ) : null}
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => setPriceOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitPrice()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

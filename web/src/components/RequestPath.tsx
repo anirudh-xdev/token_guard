@@ -51,7 +51,7 @@ export function RequestPath() {
               <h3 className="font-display text-lg font-semibold text-text">
                 {step.title}
               </h3>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                 {step.body}
               </p>
             </div>

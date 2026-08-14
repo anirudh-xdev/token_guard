@@ -1,6 +1,7 @@
 import { CtaGroup } from "@/components/CtaGroup";
 import { HeroVisual } from "@/components/HeroVisual";
 import { ProblemsSection } from "@/components/ProblemsSection";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 export default function HomePage() {
@@ -32,7 +33,7 @@ export default function HomePage() {
 
       <ProblemsSection />
 
-      <section className="border-t border-line bg-ink-2">
+      <section className="border-t border-border bg-ink-2">
         <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 lg:grid-cols-2 lg:gap-16">
           <div>
             <p className="text-[0.7rem] uppercase tracking-[0.18em] text-signal">
@@ -41,24 +42,23 @@ export default function HomePage() {
             <h2 className="font-display mt-3 text-3xl font-bold tracking-tight">
               One request path. Fail closed.
             </h2>
-            <p className="mt-4 text-sm leading-relaxed text-muted">
+            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
               Budget reserve in Turso, loop counters in Upstash Redis, live
               pricing from OpenRouter sync into the catalog. Management dashboard
               stays on the Go binary — this site tells the story.
             </p>
-            <div className="mt-8 flex flex-wrap gap-4 text-[0.7rem] uppercase tracking-[0.12em]">
-              <Link
-                href="/how-it-works"
-                className="btn-primary px-4 py-2"
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Button size="lg" className="uppercase tracking-[0.12em] text-white!" asChild>
+                <Link href="/how-it-works">How it works</Link>
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="uppercase tracking-[0.12em]"
+                asChild
               >
-                How it works
-              </Link>
-              <Link
-                href="/architecture"
-                className="btn-ghost px-4 py-2 text-muted"
-              >
-                Architecture
-              </Link>
+                <Link href="/architecture">Architecture</Link>
+              </Button>
             </div>
           </div>
           <ul className="space-y-4 text-sm text-text-dim">
@@ -70,8 +70,7 @@ export default function HomePage() {
             ].map(([title, rest]) => (
               <li
                 key={title}
-                className="border-l-[3px] border-signal bg-panel py-3 pl-4 pr-3"
-                style={{ boxShadow: "var(--shadow-sm)" }}
+                className="border-l-[3px] border-signal bg-card py-3 pl-4 pr-3 ring-1 ring-foreground/5"
               >
                 <span className="font-medium text-text">{title}</span> — {rest}
               </li>
@@ -80,13 +79,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden border-t border-line">
+      <section className="relative overflow-hidden border-t border-border">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-signal-dim/80 via-transparent to-transparent" />
         <div className="relative mx-auto max-w-6xl px-5 py-20 text-center sm:px-8 sm:py-24">
           <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
             Put a firewall in front of your tokens.
           </h2>
-          <p className="mx-auto mt-4 max-w-lg text-sm text-muted">
+          <p className="mx-auto mt-4 max-w-lg text-sm text-muted-foreground">
             Open source Go proxy. Docs and dashboard ship with the binary;
             operators provision users and sync pricing when guard is enabled.
           </p>
