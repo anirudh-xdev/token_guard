@@ -40,6 +40,7 @@ SESSION_ID="agent-run-1"
 curl "${apiBaseUrl()}/v1/chat/completions" \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $PROVIDER_API_KEY" \\
+  -H "X-TokenGuard-Provider: openai(or any other provider you are using)" \\
   -H "X-TokenGuard-API-Key: $TOKENGUARD_API_KEY" \\
   -H "X-TokenGuard-Session-ID: $SESSION_ID" \\
 ${teamLine}  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
@@ -61,6 +62,7 @@ async function runAgentTask(userGoal) {
       headers: {
         "Content-Type": "application/json",
         "Authorization": \`Bearer \${process.env.PROVIDER_API_KEY}\`,
+        "X-TokenGuard-Provider": "openai(or any other provider you are using)",
         "X-TokenGuard-API-Key": process.env.TOKENGUARD_API_KEY,
         "X-TokenGuard-Session-ID": sessionId, // same value every step
 ${teamLine}      },
