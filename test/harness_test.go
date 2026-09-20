@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -478,7 +479,7 @@ func (s *memoryStore) ReserveBudget(ctx context.Context, userID string, amountMi
 	if onTeam {
 		memberAvail := scope.cap - scope.spent - scope.reserved
 		teamAvail := scope.teamLimit - scope.teamSpent - scope.teamReserved
-		if memberAvail < amountMicroUSD || teamAvail < amountMicroUSD {
+		if memberAvail <= 0 || teamAvail <= 0 || memberAvail < amountMicroUSD || teamAvail < amountMicroUSD {
 			return billing.Budget{
 				UserID:           userID,
 				LimitMicroUSD:    scope.cap,
@@ -497,7 +498,7 @@ func (s *memoryStore) ReserveBudget(ctx context.Context, userID string, amountMi
 			SpentMicroUSD: scope.spent, ReservedMicroUSD: scope.reserved + amountMicroUSD,
 		}, true, nil
 	}
-	if amountMicroUSD > b.AvailableMicroUSD() {
+	if b.AvailableMicroUSD() <= 0 || amountMicroUSD > b.AvailableMicroUSD() {
 		return b, false, nil
 	}
 	b.ReservedMicroUSD += amountMicroUSD
@@ -943,8 +944,8 @@ func (s *memoryStore) CreateTeam(ctx context.Context, ownerUserID, name string, 
 		s.teams = map[string]memTeam{}
 		s.members = map[string]memTeamMember{}
 	}
-	if limitMicroUSD <= 0 {
-		limitMicroUSD = 1_000_000
+	if limitMicroUSD < 0 {
+		return billing.Team{}, errors.New("team budget cannot be negative")
 	}
 	id := s.nextID("team")
 	s.teams[id] = memTeam{id: id, name: name, owner: ownerUserID, limit: limitMicroUSD}

@@ -7,25 +7,29 @@ import (
 	"time"
 )
 
-// IsTransientStoreError reports network / timeout failures that are safe to retry.
+// IsTransientStoreError reports network / deadline failures that are safe to
+// retry for idempotent reads. Do not use this to retry budget writes.
 func IsTransientStoreError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.DeadlineExceeded) {
 		return true
+	}
+	// Client disconnect / explicit cancel is not a Turso blip — do not retry.
+	if errors.Is(err, context.Canceled) {
+		return false
 	}
 	msg := strings.ToLower(err.Error())
 	for _, needle := range []string{
 		"deadline exceeded",
-		"timeout",
+		"i/o timeout",
+		"tls handshake timeout",
 		"temporarily unavailable",
 		"connection reset",
 		"connection refused",
 		"broken pipe",
-		"eof",
-		"i/o timeout",
-		"tls handshake timeout",
+		"unexpected eof",
 		"server closed idle connection",
 		"http2: client connection force closed",
 	} {

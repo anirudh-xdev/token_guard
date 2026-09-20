@@ -174,7 +174,7 @@ func (s *Store) ListRecentUsage(ctx context.Context, limit int) ([]UsageEvent, e
 		}
 		events = append(events, e)
 	}
-	return events, nil
+	return events, rows.Err()
 }
 
 // ListPortalUsage returns recent usage for the signed-in user.

@@ -39,6 +39,15 @@ func (b Budget) AvailableMicroUSD() int64 {
 	return available
 }
 
+// canCoverReservation is the ledger rule for both $0 and positive estimates:
+// nothing left is never affordable, even when the estimated reserve is $0.
+func canCoverReservation(available, amountMicroUSD int64) bool {
+	if available <= 0 {
+		return false
+	}
+	return available >= amountMicroUSD
+}
+
 func (s *Store) ReserveBudget(ctx context.Context, userID string, amountMicroUSD int64) (Budget, bool, error) {
 	if s == nil || s.db == nil {
 		return Budget{}, false, errors.New("billing store is nil")
@@ -64,48 +73,26 @@ func (s *Store) ReserveBudget(ctx context.Context, userID string, amountMicroUSD
 	}
 	if amountMicroUSD == 0 {
 		budget := budgetFromTeamScope(userID, scope)
-		if !onTeam {
+		affordable := false
+		if onTeam {
+			memberAvail := scope.MemberCap - scope.MemberSpent - scope.MemberReserved
+			teamAvail := scope.TeamLimit - scope.TeamSpent - scope.TeamReserved
+			affordable = canCoverReservation(memberAvail, 0) && canCoverReservation(teamAvail, 0)
+		} else {
 			budget, err = scanBudget(ctx, tx, userID)
 			if err != nil {
 				return Budget{}, false, err
 			}
+			affordable = canCoverReservation(budget.AvailableMicroUSD(), 0)
 		}
 		if err := tx.Commit(); err != nil {
 			return Budget{}, false, err
 		}
-		return budget, true, nil
+		return budget, affordable, nil
 	}
 
 	if onTeam {
-		memberAvail := scope.MemberCap - scope.MemberSpent - scope.MemberReserved
-		teamAvail := scope.TeamLimit - scope.TeamSpent - scope.TeamReserved
-		if memberAvail < amountMicroUSD || teamAvail < amountMicroUSD {
-			budget := budgetFromTeamScope(userID, scope)
-			if err := tx.Commit(); err != nil {
-				return Budget{}, false, err
-			}
-			return budget, false, nil
-		}
-		if _, err := tx.ExecContext(ctx, `
-UPDATE team_members
-SET reserved_microusd = reserved_microusd + ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE team_id = ? AND user_id = ?`, amountMicroUSD, scope.TeamID, userID); err != nil {
-			return Budget{}, false, fmt.Errorf("reserve member cap: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `
-UPDATE teams
-SET reserved_microusd = reserved_microusd + ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE id = ?`, amountMicroUSD, scope.TeamID); err != nil {
-			return Budget{}, false, fmt.Errorf("reserve team pool: %w", err)
-		}
-		budget := budgetFromTeamScope(userID, scope)
-		budget.ReservedMicroUSD += amountMicroUSD
-		if err := tx.Commit(); err != nil {
-			return Budget{}, false, fmt.Errorf("commit reservation tx: %w", err)
-		}
-		return budget, true, nil
+		return s.reserveTeamBudget(ctx, tx, userID, amountMicroUSD, scope)
 	}
 
 	result, err := tx.ExecContext(ctx, `
@@ -141,6 +128,64 @@ WHERE user_id = ?
 	if err != nil {
 		return Budget{}, false, err
 	}
+	if err := tx.Commit(); err != nil {
+		return Budget{}, false, fmt.Errorf("commit reservation tx: %w", err)
+	}
+	return budget, true, nil
+}
+
+func (s *Store) reserveTeamBudget(ctx context.Context, tx *sql.Tx, userID string, amountMicroUSD int64, scope teamSpendScope) (Budget, bool, error) {
+	memberAvail := scope.MemberCap - scope.MemberSpent - scope.MemberReserved
+	teamAvail := scope.TeamLimit - scope.TeamSpent - scope.TeamReserved
+	if !canCoverReservation(memberAvail, amountMicroUSD) || !canCoverReservation(teamAvail, amountMicroUSD) {
+		if err := tx.Commit(); err != nil {
+			return Budget{}, false, err
+		}
+		return budgetFromTeamScope(userID, scope), false, nil
+	}
+
+	memberRes, err := tx.ExecContext(ctx, `
+UPDATE team_members
+SET reserved_microusd = reserved_microusd + ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE team_id = ? AND user_id = ? AND status = 'active'
+  AND (cap_microusd - spent_microusd - reserved_microusd) >= ?`,
+		amountMicroUSD, scope.TeamID, userID, amountMicroUSD)
+	if err != nil {
+		return Budget{}, false, fmt.Errorf("reserve member cap: %w", err)
+	}
+	memberRows, err := memberRes.RowsAffected()
+	if err != nil {
+		return Budget{}, false, fmt.Errorf("member reservation rows affected: %w", err)
+	}
+	if memberRows == 0 {
+		if err := tx.Commit(); err != nil {
+			return Budget{}, false, err
+		}
+		return budgetFromTeamScope(userID, scope), false, nil
+	}
+
+	teamRes, err := tx.ExecContext(ctx, `
+UPDATE teams
+SET reserved_microusd = reserved_microusd + ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+  AND (limit_microusd - spent_microusd - reserved_microusd) >= ?`,
+		amountMicroUSD, scope.TeamID, amountMicroUSD)
+	if err != nil {
+		return Budget{}, false, fmt.Errorf("reserve team pool: %w", err)
+	}
+	teamRows, err := teamRes.RowsAffected()
+	if err != nil {
+		return Budget{}, false, fmt.Errorf("team reservation rows affected: %w", err)
+	}
+	if teamRows == 0 {
+		// Roll back the member increment so a racing pool exhaustion cannot oversubscribe.
+		return budgetFromTeamScope(userID, scope), false, nil
+	}
+
+	budget := budgetFromTeamScope(userID, scope)
+	budget.ReservedMicroUSD += amountMicroUSD
 	if err := tx.Commit(); err != nil {
 		return Budget{}, false, fmt.Errorf("commit reservation tx: %w", err)
 	}

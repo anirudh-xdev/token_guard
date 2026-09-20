@@ -45,7 +45,7 @@ func (s *fakeBudgetStore) ReserveBudget(ctx context.Context, userID string, amou
 	if userID != s.budget.UserID {
 		return billing.Budget{}, false, billing.ErrBudgetNotFound
 	}
-	if amountMicroUSD > s.budget.AvailableMicroUSD() {
+	if s.budget.AvailableMicroUSD() <= 0 || amountMicroUSD > s.budget.AvailableMicroUSD() {
 		return s.budget, false, nil
 	}
 	s.budget.ReservedMicroUSD += amountMicroUSD

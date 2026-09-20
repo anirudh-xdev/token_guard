@@ -542,14 +542,16 @@ WHERE email = ? AND status = 'pending'`, email)
 			if errors.Is(err, ErrTeamMemberExists) {
 				// Already a member — mark invite accepted anyway.
 			} else {
-				continue
+				return accepted, err
 			}
 		}
-		_, _ = s.db.ExecContext(ctx, `
+		if _, err := s.db.ExecContext(ctx, `
 UPDATE team_invites
 SET status = 'accepted',
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE id = ?`, p.id)
+WHERE id = ?`, p.id); err != nil {
+			return accepted, err
+		}
 		accepted++
 	}
 	return accepted, nil

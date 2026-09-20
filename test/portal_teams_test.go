@@ -353,3 +353,60 @@ func TestPortalTeamIDHeaderSelectsSpend(t *testing.T) {
 		t.Fatalf("member overview = %#v, want member with one request", overview)
 	}
 }
+
+func TestGuardTeamBudgetExhaustedBlocks(t *testing.T) {
+	hits := &hitCountingUpstream{
+		next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(loadFixture(t, "chat.response.json"))
+		}),
+	}
+	h := newHarness(t, harnessOpts{
+		guardEnabled:   true,
+		portalEnabled:  true,
+		portalDevLogin: true,
+		upstream:       hits,
+	})
+
+	jar, _ := cookiejar.New(nil)
+	owner := &http.Client{Jar: jar, Transport: h.server.Client().Transport}
+	portalDo(t, owner, http.MethodPost, h.url("/portal/dev/login"), `{"email":"owner-zero@example.com","name":"Owner"}`)
+
+	status, body := portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams"), `{"name":"Empty","budget_usd":0}`)
+	if status != http.StatusCreated {
+		t.Fatalf("team=%d %s", status, body)
+	}
+	var team map[string]any
+	_ = json.Unmarshal([]byte(body), &team)
+	teamID, _ := team["id"].(string)
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/keys"), `{"name":"default"}`)
+	if status != http.StatusCreated && status != http.StatusOK {
+		t.Fatalf("create key=%d %s", status, body)
+	}
+	var keyResp map[string]any
+	_ = json.Unmarshal([]byte(body), &keyResp)
+	apiKey, _ := keyResp["api_key"].(string)
+	if apiKey == "" {
+		t.Fatalf("missing api_key: %s", body)
+	}
+
+	status, data, _ := h.doJSON(http.MethodPost, "/v1/chat/completions", map[string]any{
+		"model":      "gpt-e2e",
+		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		"max_tokens": 16,
+	}, h.proxyHeaders(map[string]string{
+		"X-TokenGuard-API-Key": apiKey,
+		"X-TokenGuard-Team-ID": teamID,
+	}))
+	if status != http.StatusPaymentRequired {
+		t.Fatalf("status=%d data=%v, want 402", status, data)
+	}
+	if data["code"] != "budget_exceeded" {
+		t.Fatalf("code=%v data=%v", data["code"], data)
+	}
+	if hits.Hits() != 0 {
+		t.Fatalf("upstream hits = %d, want 0", hits.Hits())
+	}
+}
