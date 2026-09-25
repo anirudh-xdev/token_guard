@@ -269,6 +269,42 @@ func TestHandlerBlocksInsufficientBudget(t *testing.T) {
 	}
 }
 
+func TestHandlerClampsOutputWhenPromptFitsButMaxTokensDoesNot(t *testing.T) {
+	var upstreamBody string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		upstreamBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"usage":{"prompt_tokens":9,"completion_tokens":2,"total_tokens":11},"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer upstream.Close()
+
+	store := newFakeBudgetStore(20)
+	pricing := mustTestPricing(t)
+	handler, err := NewHandler(Config{
+		ListenAddr:  ":0",
+		UpstreamURL: upstream.URL,
+	}, withTokenEncoder(fakeTokenEncoder{}), WithGuard(store, pricing, fakeLoopBreaker{}), WithAsyncLogTimeout(time.Second))
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-test","max_tokens":10000,"messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set(tokenGuardAPIKeyHeader, "tg_test")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(upstreamBody, `"max_tokens":11`) && !strings.Contains(upstreamBody, `"max_tokens": 11`) {
+		t.Fatalf("upstream body = %s, want max_tokens clamped to remaining budget", upstreamBody)
+	}
+	if !strings.Contains(recorder.Header().Get("X-TokenGuard-Estimate"), "reserved_output_tokens=11") {
+		t.Fatalf("estimate header = %q", recorder.Header().Get("X-TokenGuard-Estimate"))
+	}
+}
+
 func TestHandlerBlocksCircuitBreakerTrip(t *testing.T) {
 	upstreamCalled := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

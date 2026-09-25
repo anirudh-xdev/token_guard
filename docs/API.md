@@ -110,7 +110,7 @@ Self-serve path for hosted TokenGuard (users never configure Turso/Upstash):
 4. Point SDK `baseURL` at `{api_host}/v1` and send `X-TokenGuard-API-Key`
 5. Optional: create a **team** with a pool budget and invite members with per-person caps
 
-Default personal budget when a portal account is created: **`TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD`** (default **$5**).
+Default personal budget when a portal account is created: **`TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD`** (default **$20**). Existing accounts keep the limit already stored for them.
 
 Portal APIs authenticate with `Authorization: Bearer <Clerk session JWT>`. Cookie sessions are for `TOKENGUARD_PORTAL_DEV_LOGIN` / e2e harness only. CORS allowlist: `TOKENGUARD_PORTAL_CORS_ORIGINS`.
 
@@ -178,6 +178,10 @@ Content-Type: application/json
   "error": "TokenGuard: budget exceeded",
   "available_microusd": 1200,
   "estimated_cost_microusd": 5000,
+  "input_cost_microusd": 800,
+  "output_reserve_microusd": 4200,
+  "input_tokens": 1200,
+  "max_output_tokens": 4096,
   "model": "gpt-4o-mini"
 }
 ```

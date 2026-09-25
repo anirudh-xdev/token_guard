@@ -56,6 +56,24 @@ func TestAnalyzeRequestUsesDefaultMaxOutputTokens(t *testing.T) {
 	}
 }
 
+func TestApplyCombinedBearerAcceptsAnthropicAPIKey(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "/v1/messages", nil)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+	req.Header.Set("x-api-key", "tg_test:sk-ant-third")
+	applyCombinedBearer(req)
+	if got := tokenGuardAPIKey(req); got != "tg_test" {
+		t.Fatalf("tokenGuardAPIKey = %q", got)
+	}
+	if got := req.Header.Get("x-api-key"); got != "sk-ant-third" {
+		t.Fatalf("x-api-key = %q, want provider key only", got)
+	}
+	if got := req.Header.Get(tokenGuardSessionHeader); got != cursorSessionID("tg_test") {
+		t.Fatalf("session = %q", got)
+	}
+}
+
 func TestSplitCombinedBearer(t *testing.T) {
 	tests := []struct {
 		header      string

@@ -82,12 +82,21 @@ func applyCombinedBearer(r *http.Request) {
 	if tokenGuardAPIKey(r) != "" {
 		return
 	}
-	tgKey, providerKey, ok := splitCombinedBearer(r.Header.Get("Authorization"))
-	if !ok {
+	if tgKey, providerKey, ok := splitCombinedBearer(r.Header.Get("Authorization")); ok {
+		r.Header.Set(tokenGuardAPIKeyHeader, tgKey)
+		r.Header.Set("Authorization", "Bearer "+providerKey)
+		setSingleHeaderSession(r, tgKey)
 		return
 	}
-	r.Header.Set(tokenGuardAPIKeyHeader, tgKey)
-	r.Header.Set("Authorization", "Bearer "+providerKey)
+	// Claude Code and other Anthropic clients put the only secret in x-api-key.
+	if tgKey, providerKey, ok := splitCombinedToken(r.Header.Get("x-api-key")); ok {
+		r.Header.Set(tokenGuardAPIKeyHeader, tgKey)
+		r.Header.Set("x-api-key", providerKey)
+		setSingleHeaderSession(r, tgKey)
+	}
+}
+
+func setSingleHeaderSession(r *http.Request, tgKey string) {
 	if sessionIDFromHeaders(r.Header) == "" {
 		r.Header.Set(tokenGuardSessionHeader, cursorSessionID(tgKey))
 	}
@@ -99,8 +108,11 @@ func splitCombinedBearer(header string) (string, string, bool) {
 	if len(value) < len(scheme) || !strings.EqualFold(value[:len(scheme)], scheme) {
 		return "", "", false
 	}
-	token := strings.TrimSpace(value[len(scheme):])
-	tgKey, providerKey, found := strings.Cut(token, ":")
+	return splitCombinedToken(strings.TrimSpace(value[len(scheme):]))
+}
+
+func splitCombinedToken(token string) (string, string, bool) {
+	tgKey, providerKey, found := strings.Cut(strings.TrimSpace(token), ":")
 	if !found || !strings.HasPrefix(tgKey, "tg_") || len(tgKey) <= len("tg_") || providerKey == "" {
 		return "", "", false
 	}
@@ -161,6 +173,28 @@ func analyzeRequest(r *http.Request, body []byte, encoder tokenEncoder, defaultM
 	analysis.InputTokens = countRequestInputTokens(root, body, encoder)
 	analysis.SemanticPayload = semanticPayload(root, body)
 	return analysis, nil
+}
+
+func clampMaxOutputTokens(body []byte, maxOutput int64) ([]byte, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(body, &root); err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(maxOutput)
+	if err != nil {
+		return nil, err
+	}
+	set := false
+	for _, field := range []string{"max_completion_tokens", "max_tokens", "max_output_tokens"} {
+		if _, ok := root[field]; ok {
+			root[field] = raw
+			set = true
+		}
+	}
+	if !set {
+		root["max_tokens"] = raw
+	}
+	return json.Marshal(root)
 }
 
 func sessionIDFromHeaders(header http.Header) string {

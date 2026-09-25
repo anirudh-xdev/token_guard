@@ -110,6 +110,10 @@ Override OpenAI Base URL: https://YOUR_TOKENGUARD_HOST/v1
 
 `TOKENGUARD_DEFAULT_PROVIDER` must be the route for that third party. Add the model ids Cursor will call; unknown models are still blocked. Cursor often refuses `127.0.0.1`, so use a public TokenGuard URL. Tab and Cursor subscription models do not go through this override.
 
+The same `tg_<key>:<provider-key>` value works as `x-api-key` for Claude Code (`ANTHROPIC_API_KEY`) and as `OPENAI_API_KEY` for Codex and other OpenAI-compatible CLIs. Apps that can set headers should keep using `X-TokenGuard-API-Key` plus the real provider credential instead.
+
+Agent requests are priced on the full body (system prompt, tools, history), not the last user line. A default $5 portal budget can block one `gpt-5.5` agent turn. Raise that key's limit, or call a cheaper catalog model.
+
 ## LangChain / LangGraph / agents
 
 Wherever the LLM client is constructed, set:

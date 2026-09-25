@@ -24,23 +24,43 @@ import { CopyIcon } from "lucide-react";
 
 export function IntegrateView() {
   const { selectedTeam } = usePortal();
-  const [language, setLanguage] = useState<"curl" | "node">("curl");
+  const [language, setLanguage] = useState<"curl" | "node" | "single">("curl");
   const [copied, setCopied] = useState(false);
   const teamLine = selectedTeam
-    ? language === "curl"
-      ? `  -H "X-TokenGuard-Team-ID: ${selectedTeam.id}" \\\n`
-      : `      "X-TokenGuard-Team-ID": "${selectedTeam.id}",\n`
+    ? language === "node"
+      ? `      "X-TokenGuard-Team-ID": "${selectedTeam.id}",\n`
+      : `  -H "X-TokenGuard-Team-ID: ${selectedTeam.id}" \\\n`
     : "";
   const snippet =
-    language === "curl"
+    language === "single"
+      ? `# IDE or CLI with only one API key field (Cursor, Codex, Claude Code).
+# Provider name is not sent; set TOKENGUARD_DEFAULT_PROVIDER on the server
+# to a real route: openai, openrouter, anthropic, apimaster, ...
+# Cursor / OpenAI-compatible:
+#   base URL ${apiBaseUrl()}/v1
+#   API key  tg_YOUR_TOKENGUARD_KEY:YOUR_PROVIDER_KEY
+# Claude Code / Anthropic (x-api-key, no Bearer):
+#   ANTHROPIC_BASE_URL=${apiBaseUrl()}
+#   ANTHROPIC_API_KEY=tg_YOUR_TOKENGUARD_KEY:YOUR_PROVIDER_KEY
+#
+# Agent turns send the whole prompt, tools, and history — not just the
+# last message. gpt-5.5 can estimate several dollars per turn.
+# Raise the key budget, or pick a cheaper catalog model.
+
+curl "${apiBaseUrl()}/v1/chat/completions" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer tg_YOUR_TOKENGUARD_KEY:YOUR_PROVIDER_KEY" \\
+${teamLine}  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'`
+      : language === "curl"
       ? `# Use the SAME session id for every call in one agent run.
-# Change it only when the user starts a brand-new run.
+# X-TokenGuard-Provider must be a configured route name
+# (openai, openrouter, anthropic, apimaster, ...).
 SESSION_ID="agent-run-1"
 
 curl "${apiBaseUrl()}/v1/chat/completions" \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $PROVIDER_API_KEY" \\
-  -H "X-TokenGuard-Provider: openai(or any other provider you are using)" \\
+  -H "X-TokenGuard-Provider: openai" \\
   -H "X-TokenGuard-API-Key: $TOKENGUARD_API_KEY" \\
   -H "X-TokenGuard-Session-ID: $SESSION_ID" \\
 ${teamLine}  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
@@ -62,7 +82,7 @@ async function runAgentTask(userGoal) {
       headers: {
         "Content-Type": "application/json",
         "Authorization": \`Bearer \${process.env.PROVIDER_API_KEY}\`,
-        "X-TokenGuard-Provider": "openai(or any other provider you are using)",
+        "X-TokenGuard-Provider": "openai",
         "X-TokenGuard-API-Key": process.env.TOKENGUARD_API_KEY,
         "X-TokenGuard-Session-ID": sessionId, // same value every step
 ${teamLine}      },
@@ -156,14 +176,17 @@ ${teamLine}      },
             </label>
             <Select
               value={language}
-              onValueChange={(value) => setLanguage(value as "curl" | "node")}
+              onValueChange={(value) =>
+                setLanguage(value as "curl" | "node" | "single")
+              }
             >
-              <SelectTrigger id="snippet-language" className="h-10 w-32">
+              <SelectTrigger id="snippet-language" className="h-10 w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="curl">cURL</SelectItem>
-                <SelectItem value="node">Node.js</SelectItem>
+                <SelectItem value="curl">App cURL</SelectItem>
+                <SelectItem value="node">App Node.js</SelectItem>
+                <SelectItem value="single">IDE / CLI</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" size="lg" onClick={() => void copy()}>
