@@ -27,6 +27,7 @@ type AccountStore interface {
 	RemoveTeamMember(ctx context.Context, ownerUserID, teamID, memberUserID string) error
 	ListTeamMembers(ctx context.Context, requesterUserID, teamID string) ([]billing.TeamMember, error)
 	ListPendingInvitesForTeam(ctx context.Context, ownerUserID, teamID string) ([]billing.TeamInvite, error)
+	RevokePendingInvite(ctx context.Context, ownerUserID, teamID, inviteID string) error
 	ListPortalUsage(ctx context.Context, userID, teamID string, limit int) ([]billing.UsageEvent, error)
 	GetPortalOverview(ctx context.Context, userID, teamID string, days int) (billing.PortalOverview, error)
 }

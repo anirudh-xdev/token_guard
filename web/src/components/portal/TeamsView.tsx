@@ -249,6 +249,29 @@ export function TeamsView() {
     }
   }
 
+  async function revokeInvite(invite: TeamInvite) {
+    if (!selectedTeam) return;
+    setBusy(`revoke:${invite.id}`);
+    setError("");
+    try {
+      const { ok, data } = await tgPortalFetch(
+        "/portal/api/teams/invites/revoke",
+        getToken,
+        {
+          method: "POST",
+          body: JSON.stringify({ team_id: selectedTeam.id, invite_id: invite.id }),
+        },
+      );
+      if (!ok) throw new Error(data.error || "Could not revoke invite");
+      setNotice(`Revoked invite for ${invite.email}.`);
+      await Promise.all([loadOwnerDetails(), refreshMe(), refreshOverview()]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not revoke invite");
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function removeMember() {
     if (!selectedTeam || !remove) return;
     setBusy(`remove:${remove.user_id}`);
@@ -340,6 +363,7 @@ export function TeamsView() {
             onInvite={inviteMember}
             onSaveCap={saveCap}
             onRemove={setRemove}
+            onRevokeInvite={revokeInvite}
           />
         ) : (
           <Card>
@@ -502,6 +526,7 @@ function OwnerTeamPanel(props: {
   onInvite: (values: InviteMemberValues) => Promise<void>;
   onSaveCap: (member: TeamMember) => Promise<void>;
   onRemove: (member: TeamMember) => void;
+  onRevokeInvite: (invite: TeamInvite) => Promise<void>;
 }) {
   const poolForm = useForm<PoolBudgetInput, unknown, PoolBudgetValues>({
     resolver: zodResolver(poolBudgetSchema),
@@ -665,9 +690,19 @@ function OwnerTeamPanel(props: {
                 {index > 0 ? <Separator /> : null}
                 <div className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                   <span className="font-medium">{invite.email}</span>
-                  <Badge variant="secondary">
-                    {formatUSD(invite.cap_usd)} cap · waiting
-                  </Badge>
+                  <span className="inline-flex items-center gap-2">
+                    <Badge variant="secondary">
+                      {formatUSD(invite.cap_usd)} cap · waiting
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void props.onRevokeInvite(invite)}
+                      disabled={props.busy === `revoke:${invite.id}`}
+                    >
+                      {props.busy === `revoke:${invite.id}` ? "Revoking…" : "Revoke"}
+                    </Button>
+                  </span>
                 </div>
               </div>
             ))}

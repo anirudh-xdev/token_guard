@@ -203,6 +203,79 @@ func TestPortalPendingInviteAcceptsOnLogin(t *testing.T) {
 	}
 }
 
+func TestPortalRevokePendingInvite(t *testing.T) {
+	h := newHarness(t, harnessOpts{guardEnabled: true, portalEnabled: true, portalDevLogin: true})
+
+	jar, _ := cookiejar.New(nil)
+	owner := &http.Client{Jar: jar, Transport: h.server.Client().Transport}
+	portalDo(t, owner, http.MethodPost, h.url("/portal/dev/login"), `{"email":"owner-revoke@example.com","name":"Owner"}`)
+
+	status, body := portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams"), `{"name":"RevokeCo","budget_usd":40}`)
+	if status != http.StatusCreated {
+		t.Fatalf("create=%d %s", status, body)
+	}
+	var team map[string]any
+	_ = json.Unmarshal([]byte(body), &team)
+	teamID, _ := team["id"].(string)
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members"),
+		`{"team_id":"`+teamID+`","email":"revoked@example.com","cap_usd":8}`)
+	if status != http.StatusAccepted {
+		t.Fatalf("invite=%d %s", status, body)
+	}
+	var invited struct {
+		Invite billing.TeamInvite `json:"invite"`
+	}
+	if err := json.Unmarshal([]byte(body), &invited); err != nil || invited.Invite.ID == "" {
+		t.Fatalf("decode invite: %v body=%s", err, body)
+	}
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/invites/revoke"),
+		`{"team_id":"`+teamID+`","invite_id":"`+invited.Invite.ID+`"}`)
+	if status != http.StatusOK {
+		t.Fatalf("revoke=%d %s", status, body)
+	}
+
+	status, body = portalDo(t, owner, http.MethodGet, h.url("/portal/api/teams/invites?team_id="+teamID), "")
+	if status != http.StatusOK {
+		t.Fatalf("list invites=%d %s", status, body)
+	}
+	if strings.Contains(body, "revoked@example.com") {
+		t.Fatalf("revoked invite still listed: %s", body)
+	}
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/invites/revoke"),
+		`{"team_id":"`+teamID+`","invite_id":"`+invited.Invite.ID+`"}`)
+	if status != http.StatusNotFound {
+		t.Fatalf("second revoke=%d %s, want 404", status, body)
+	}
+
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/members"),
+		`{"team_id":"`+teamID+`","email":"revoked@example.com","cap_usd":8}`)
+	if status != http.StatusAccepted {
+		t.Fatalf("re-invite same email after revoke=%d %s", status, body)
+	}
+	if err := json.Unmarshal([]byte(body), &invited); err != nil || invited.Invite.ID == "" {
+		t.Fatalf("decode re-invite: %v body=%s", err, body)
+	}
+	status, body = portalDo(t, owner, http.MethodPost, h.url("/portal/api/teams/invites/revoke"),
+		`{"team_id":"`+teamID+`","invite_id":"`+invited.Invite.ID+`"}`)
+	if status != http.StatusOK {
+		t.Fatalf("revoke re-invite=%d %s", status, body)
+	}
+
+	jar2, _ := cookiejar.New(nil)
+	revoked := &http.Client{Jar: jar2, Transport: h.server.Client().Transport}
+	portalDo(t, revoked, http.MethodPost, h.url("/portal/dev/login"), `{"email":"revoked@example.com","name":"Revoked"}`)
+	status, body = portalDo(t, revoked, http.MethodGet, h.url("/portal/api/me"), "")
+	if status != http.StatusOK {
+		t.Fatalf("me=%d %s", status, body)
+	}
+	if strings.Contains(body, teamID) {
+		t.Fatalf("revoked invite must not auto-join: %s", body)
+	}
+}
+
 func TestPortalTeamIDHeaderSelectsSpend(t *testing.T) {
 	h := newHarness(t, harnessOpts{guardEnabled: true, portalEnabled: true, portalDevLogin: true})
 
@@ -323,12 +396,14 @@ func TestPortalTeamIDHeaderSelectsSpend(t *testing.T) {
 		"invite": `{"team_id":"` + teamAID + `","email":"other@example.com","cap_usd":1}`,
 		"cap":    `{"team_id":"` + teamAID + `","user_id":"` + me.User.UserID + `","cap_usd":1}`,
 		"remove": `{"team_id":"` + teamAID + `","user_id":"` + me.User.UserID + `"}`,
+		"revoke": `{"team_id":"` + teamAID + `","invite_id":"inv_missing"}`,
 	} {
 		path := map[string]string{
 			"budget": "/portal/api/teams/budget",
 			"invite": "/portal/api/teams/members",
 			"cap":    "/portal/api/teams/members/cap",
 			"remove": "/portal/api/teams/members/remove",
+			"revoke": "/portal/api/teams/invites/revoke",
 		}[name]
 		status, _ = portalDo(t, member, http.MethodPost, h.url(path), requestBody)
 		if status != http.StatusForbidden {

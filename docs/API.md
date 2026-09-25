@@ -20,6 +20,7 @@ HTTP surface of TokenGuard. Full integrator walkthrough: [HOW_TO_USE.md](../HOW_
 | `POST` | `/portal/api/teams/budget` | Owner | Set team pool USD |
 | `GET` / `POST` | `/portal/api/teams/members` | Owner | List members (`?team_id=`) / invite by email + `cap_usd` (202 if pending invite) |
 | `GET` | `/portal/api/teams/invites` | Owner | Pending invites (`?team_id=`) |
+| `POST` | `/portal/api/teams/invites/revoke` | Owner | Revoke pending invite (`team_id`, `invite_id`) |
 | `POST` | `/portal/api/teams/members/cap` | Owner | Update member cap |
 | `POST` | `/portal/api/teams/members/remove` | Owner | Remove member |
 | `GET` | `/portal/api/usage` | Signed-in | Exact scoped usage: personal when no `team_id`; team-wide for owner; requester-only for member |

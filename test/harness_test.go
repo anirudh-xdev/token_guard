@@ -207,6 +207,7 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		mux.HandleFunc("/portal/api/teams/members/cap", handler.HandlePortalUpdateMemberCap)
 		mux.HandleFunc("/portal/api/teams/members/remove", handler.HandlePortalRemoveTeamMember)
 		mux.HandleFunc("/portal/api/teams/invites", handler.HandlePortalListPendingInvites)
+		mux.HandleFunc("/portal/api/teams/invites/revoke", handler.HandlePortalRevokePendingInvite)
 		mux.HandleFunc("/portal/api/usage", handler.HandlePortalListUsage)
 		mux.HandleFunc("/portal/api/overview", handler.HandlePortalOverview)
 	}
@@ -1146,6 +1147,31 @@ func (s *memoryStore) ListPendingInvitesForTeam(ctx context.Context, ownerUserID
 		})
 	}
 	return out, nil
+}
+
+func (s *memoryStore) RevokePendingInvite(ctx context.Context, ownerUserID, teamID, inviteID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ownerUserID = strings.TrimSpace(ownerUserID)
+	teamID = strings.TrimSpace(teamID)
+	inviteID = strings.TrimSpace(inviteID)
+	if ownerUserID == "" || teamID == "" || inviteID == "" {
+		return errors.New("team id and invite id are required")
+	}
+	t, ok := s.teams[teamID]
+	if !ok {
+		return billing.ErrTeamNotFound
+	}
+	if t.owner != ownerUserID {
+		return billing.ErrNotTeamOwner
+	}
+	inv, ok := s.invites[inviteID]
+	if !ok || inv.teamID != teamID || inv.status != "pending" {
+		return billing.ErrTeamInviteNotFound
+	}
+	inv.status = "revoked"
+	s.invites[inviteID] = inv
+	return nil
 }
 
 func (s *memoryStore) ListPortalUsage(ctx context.Context, userID, teamID string, limit int) ([]billing.UsageEvent, error) {
