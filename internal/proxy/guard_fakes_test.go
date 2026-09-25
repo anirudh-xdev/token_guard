@@ -134,8 +134,17 @@ type fakeLoopBreaker struct {
 	err    error
 }
 
+type recordingLoopBreaker struct {
+	sessionID string
+}
+
 func (b fakeLoopBreaker) Check(ctx context.Context, sessionID string, payload []byte) (cache.CircuitBreakerResult, error) {
 	return b.result, b.err
+}
+
+func (b *recordingLoopBreaker) Check(ctx context.Context, sessionID string, payload []byte) (cache.CircuitBreakerResult, error) {
+	b.sessionID = sessionID
+	return cache.CircuitBreakerResult{Count: 1, Threshold: 3}, nil
 }
 
 func mustTestPricing(t *testing.T) *models.PricingEngine {

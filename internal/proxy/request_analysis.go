@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,6 +68,48 @@ func tokenGuardAPIKey(r *http.Request) string {
 		return key
 	}
 	return strings.TrimSpace(r.Header.Get(tokenGuardAPIKeyAltHeader))
+}
+
+// applyCombinedBearer supports clients that can send only Authorization,
+// such as Cursor's Override OpenAI Base URL. Format:
+//
+//	Authorization: Bearer tg_<key>:<provider-key>
+//
+// The tg_ half becomes the budget identity. The provider half is what
+// upstream receives. A missing session id is scoped to that tg_ key so
+// loop detection still runs, and stays separate per key.
+func applyCombinedBearer(r *http.Request) {
+	if tokenGuardAPIKey(r) != "" {
+		return
+	}
+	tgKey, providerKey, ok := splitCombinedBearer(r.Header.Get("Authorization"))
+	if !ok {
+		return
+	}
+	r.Header.Set(tokenGuardAPIKeyHeader, tgKey)
+	r.Header.Set("Authorization", "Bearer "+providerKey)
+	if sessionIDFromHeaders(r.Header) == "" {
+		r.Header.Set(tokenGuardSessionHeader, cursorSessionID(tgKey))
+	}
+}
+
+func splitCombinedBearer(header string) (string, string, bool) {
+	value := strings.TrimSpace(header)
+	const scheme = "bearer "
+	if len(value) < len(scheme) || !strings.EqualFold(value[:len(scheme)], scheme) {
+		return "", "", false
+	}
+	token := strings.TrimSpace(value[len(scheme):])
+	tgKey, providerKey, found := strings.Cut(token, ":")
+	if !found || !strings.HasPrefix(tgKey, "tg_") || len(tgKey) <= len("tg_") || providerKey == "" {
+		return "", "", false
+	}
+	return tgKey, providerKey, true
+}
+
+func cursorSessionID(tgKey string) string {
+	sum := sha256.Sum256([]byte(tgKey))
+	return "cursor-" + hex.EncodeToString(sum[:8])
 }
 
 func stripTokenGuardHeaders(r *http.Request) {

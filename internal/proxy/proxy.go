@@ -17,32 +17,32 @@ import (
 )
 
 type Handler struct {
-	target                     *url.URL
-	defaultProvider            string
-	providerRoutes             map[string]providerRoute
-	proxy                      *httputil.ReverseProxy
-	tokenEncoder               tokenEncoder
-	tokenizerModel             string
-	tokenObserver              StreamTokenObserver
-	budgetStore                BudgetStore
-	pricing                    *models.PricingEngine
-	circuitBreaker             LoopBreaker
-	asyncLogTimeout            time.Duration
-	maxRequestBytes            int64
-	defaultMaxOutputTokens     int64
-	adminSecret                string
-	managementEnabled          bool
-	accountStore               AccountStore
-	portalEnabledFlag          bool
-	portalDevLogin             bool
-	portalBaseURL              string
+	target                      *url.URL
+	defaultProvider             string
+	providerRoutes              map[string]providerRoute
+	proxy                       *httputil.ReverseProxy
+	tokenEncoder                tokenEncoder
+	tokenizerModel              string
+	tokenObserver               StreamTokenObserver
+	budgetStore                 BudgetStore
+	pricing                     *models.PricingEngine
+	circuitBreaker              LoopBreaker
+	asyncLogTimeout             time.Duration
+	maxRequestBytes             int64
+	defaultMaxOutputTokens      int64
+	adminSecret                 string
+	managementEnabled           bool
+	accountStore                AccountStore
+	portalEnabledFlag           bool
+	portalDevLogin              bool
+	portalBaseURL               string
 	portalDefaultBudgetMicroUSD int64
-	portalMaxKeys              int
-	portalSessionTTL           time.Duration
-	portalSecureCookies        bool
-	portalAppURL               string
-	portalCORSOrigins          []string
-	clerkSecretKey             string
+	portalMaxKeys               int
+	portalSessionTTL            time.Duration
+	portalSecureCookies         bool
+	portalAppURL                string
+	portalCORSOrigins           []string
+	clerkSecretKey              string
 }
 
 type HandlerOption func(*handlerOptions)
@@ -199,6 +199,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	applyCombinedBearer(r)
 
 	route, ok := selectProviderRoute(r, h.defaultProvider, h.providerRoutes)
 	if !ok {

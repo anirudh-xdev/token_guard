@@ -99,6 +99,17 @@ X-TokenGuard-API-Key: tg_...
 X-TokenGuard-Provider: anthropic
 ```
 
+## Cursor (one API key field)
+
+Cursor's Override OpenAI Base URL sends a single `Authorization` bearer and cannot add `X-TokenGuard-*` headers. Put both secrets in that field:
+
+```text
+OpenAI API Key: tg_YOUR_KEY:YOUR_THIRD_PARTY_KEY
+Override OpenAI Base URL: https://YOUR_TOKENGUARD_HOST/v1
+```
+
+`TOKENGUARD_DEFAULT_PROVIDER` must be the route for that third party. Add the model ids Cursor will call; unknown models are still blocked. Cursor often refuses `127.0.0.1`, so use a public TokenGuard URL. Tab and Cursor subscription models do not go through this override.
+
 ## LangChain / LangGraph / agents
 
 Wherever the LLM client is constructed, set:
