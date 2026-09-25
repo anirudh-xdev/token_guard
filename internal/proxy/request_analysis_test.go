@@ -56,6 +56,28 @@ func TestAnalyzeRequestUsesDefaultMaxOutputTokens(t *testing.T) {
 	}
 }
 
+func TestSplitCombinedBearer(t *testing.T) {
+	tests := []struct {
+		header      string
+		tgKey       string
+		providerKey string
+		ok          bool
+	}{
+		{header: "Bearer tg_test:sk-third", tgKey: "tg_test", providerKey: "sk-third", ok: true},
+		{header: "bearer tg_abc:sk-ant:extra", tgKey: "tg_abc", providerKey: "sk-ant:extra", ok: true},
+		{header: "Bearer sk-only"},
+		{header: "Bearer tg_nocolon"},
+		{header: "Bearer tg_:sk-third"},
+		{header: "Bearer tg_test:"},
+	}
+	for _, tt := range tests {
+		tgKey, providerKey, ok := splitCombinedBearer(tt.header)
+		if ok != tt.ok || tgKey != tt.tgKey || providerKey != tt.providerKey {
+			t.Fatalf("splitCombinedBearer(%q) = %q, %q, %v", tt.header, tgKey, providerKey, ok)
+		}
+	}
+}
+
 func TestTokenGuardAPIKeySupportsPrimaryAndFallbackHeaders(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "/", nil)
 	if err != nil {

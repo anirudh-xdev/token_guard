@@ -311,6 +311,54 @@ func TestHandlerBlocksCircuitBreakerTrip(t *testing.T) {
 	}
 }
 
+func TestHandlerAcceptsCombinedBearerForSingleHeaderClients(t *testing.T) {
+	var sawAuth string
+	var sawSession string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		sawSession = r.Header.Get(tokenGuardSessionHeader)
+		if got := r.Header.Get(tokenGuardAPIKeyHeader); got != "" {
+			t.Fatalf("upstream received TokenGuard key header %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer upstream.Close()
+
+	store := newFakeBudgetStore(100000)
+	pricing := mustTestPricing(t)
+	breaker := &recordingLoopBreaker{}
+	handler, err := NewHandler(Config{
+		ListenAddr:      ":0",
+		UpstreamURL:     upstream.URL,
+		DefaultProvider: providerOpenAI,
+	}, withTokenEncoder(fakeTokenEncoder{}), WithGuard(store, pricing, breaker), WithAsyncLogTimeout(time.Second))
+	if err != nil {
+		t.Fatalf("NewHandler returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-test","max_tokens":10,"messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer tg_test:sk-third-party")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+	if sawAuth != "Bearer sk-third-party" {
+		t.Fatalf("upstream Authorization = %q, want provider key only", sawAuth)
+	}
+	if sawSession != "" {
+		t.Fatalf("upstream received session header %q", sawSession)
+	}
+	if breaker.sessionID != cursorSessionID("tg_test") {
+		t.Fatalf("loop session = %q, want per-key cursor session", breaker.sessionID)
+	}
+	if !strings.HasPrefix(recorder.Header().Get("X-TokenGuard-Loop-Check"), "ok;") {
+		t.Fatalf("loop check = %q, want ok", recorder.Header().Get("X-TokenGuard-Loop-Check"))
+	}
+}
+
 func TestHandlerLogsCompletedUsageAndStripsHeaders(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get(tokenGuardAPIKeyHeader); got != "" {
@@ -499,4 +547,3 @@ func TestWriteManagementJSONSetsCORS(t *testing.T) {
 		t.Fatalf("Access-Control-Allow-Headers = %q, want admin secret allowed", got)
 	}
 }
-

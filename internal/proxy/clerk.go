@@ -76,7 +76,7 @@ func (h *Handler) verifyClerkBearer(parent context.Context, authorization string
 			identity.Name = strings.TrimSpace(*usr.Username)
 		}
 		for _, addr := range usr.EmailAddresses {
-			if addr == nil || strings.TrimSpace(addr.EmailAddress) == "" {
+			if addr == nil || strings.TrimSpace(addr.EmailAddress) == "" || !clerkEmailVerified(addr) {
 				continue
 			}
 			if usr.PrimaryEmailAddressID != nil && addr.ID == *usr.PrimaryEmailAddressID {
@@ -98,4 +98,11 @@ func initClerk(secretKey string) {
 	}
 	clerk.SetKey(secretKey)
 	log.Printf("clerk JWT verification configured")
+}
+
+func clerkEmailVerified(addr *clerk.EmailAddress) bool {
+	if addr == nil || addr.Verification == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(addr.Verification.Status), "verified")
 }

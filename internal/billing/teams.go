@@ -35,6 +35,7 @@ var (
 	ErrTeamMemberNotFound = errors.New("team member not found")
 	ErrCapExceedsPool     = errors.New("member cap cannot exceed team pool budget")
 	ErrTeamInvitePending  = errors.New("invite already pending for this email")
+	ErrTeamInviteNotFound = errors.New("pending invite not found")
 )
 
 type Team struct {
@@ -505,6 +506,43 @@ ORDER BY i.created_at DESC`, teamID)
 	return out, rows.Err()
 }
 
+// RevokePendingInvite cancels a pending invite so that email can no longer auto-join.
+func (s *Store) RevokePendingInvite(ctx context.Context, ownerUserID, teamID, inviteID string) error {
+	ownerUserID = strings.TrimSpace(ownerUserID)
+	teamID = strings.TrimSpace(teamID)
+	inviteID = strings.TrimSpace(inviteID)
+	if ownerUserID == "" || teamID == "" || inviteID == "" {
+		return errors.New("team id and invite id are required")
+	}
+	var owner string
+	err := s.db.QueryRowContext(ctx, `SELECT owner_user_id FROM teams WHERE id = ?`, teamID).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrTeamNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if owner != ownerUserID {
+		return ErrNotTeamOwner
+	}
+	res, err := s.db.ExecContext(ctx, `
+UPDATE team_invites
+SET status = 'revoked',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ? AND team_id = ? AND status = 'pending'`, inviteID, teamID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrTeamInviteNotFound
+	}
+	return nil
+}
+
 // AcceptPendingInvitesForEmail activates any pending invites for this email (call after sign-in).
 func (s *Store) AcceptPendingInvitesForEmail(ctx context.Context, userID, email string) (int, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
@@ -542,14 +580,16 @@ WHERE email = ? AND status = 'pending'`, email)
 			if errors.Is(err, ErrTeamMemberExists) {
 				// Already a member — mark invite accepted anyway.
 			} else {
-				continue
+				return accepted, err
 			}
 		}
-		_, _ = s.db.ExecContext(ctx, `
+		if _, err := s.db.ExecContext(ctx, `
 UPDATE team_invites
 SET status = 'accepted',
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE id = ?`, p.id)
+WHERE id = ?`, p.id); err != nil {
+			return accepted, err
+		}
 		accepted++
 	}
 	return accepted, nil

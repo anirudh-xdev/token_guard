@@ -14,6 +14,15 @@ func TestIsTransientStoreError(t *testing.T) {
 	if !IsTransientStoreError(errors.New(`Post "https://x.turso.io": context deadline exceeded`)) {
 		t.Fatal("turso deadline string should be transient")
 	}
+	if IsTransientStoreError(context.Canceled) {
+		t.Fatal("canceled should not be retried")
+	}
+	if !IsTransientStoreError(errors.New("unexpected EOF")) {
+		t.Fatal("unexpected EOF should be transient")
+	}
+	if IsTransientStoreError(errors.New("parse error near eof")) {
+		t.Fatal("bare eof substring should not be transient")
+	}
 	if IsTransientStoreError(errors.New("no such table: users")) {
 		t.Fatal("schema error should not be transient")
 	}

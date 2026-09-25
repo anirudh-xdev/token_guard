@@ -20,6 +20,7 @@ HTTP surface of TokenGuard. Full integrator walkthrough: [HOW_TO_USE.md](../HOW_
 | `POST` | `/portal/api/teams/budget` | Owner | Set team pool USD |
 | `GET` / `POST` | `/portal/api/teams/members` | Owner | List members (`?team_id=`) / invite by email + `cap_usd` (202 if pending invite) |
 | `GET` | `/portal/api/teams/invites` | Owner | Pending invites (`?team_id=`) |
+| `POST` | `/portal/api/teams/invites/revoke` | Owner | Revoke pending invite (`team_id`, `invite_id`) |
 | `POST` | `/portal/api/teams/members/cap` | Owner | Update member cap |
 | `POST` | `/portal/api/teams/members/remove` | Owner | Remove member |
 | `GET` | `/portal/api/usage` | Signed-in | Exact scoped usage: personal when no `team_id`; team-wide for owner; requester-only for member |
@@ -41,10 +42,18 @@ Management routes also accept `OPTIONS` for CORS preflight. CORS headers (`Acces
 | Header | Required | Purpose |
 |--------|----------|---------|
 | `X-TokenGuard-API-Key` or `X-TokenGuard-Key` | Yes when guard on | User key (`tg_...`) |
-| `X-TokenGuard-Provider` | No | Named provider from `TOKENGUARD_PROVIDER_ROUTES` |
+| `X-TokenGuard-Provider` | No | Named provider from `TOKENGUARD_PROVIDER_ROUTES`. Falls back to `TOKENGUARD_DEFAULT_PROVIDER` |
 | `X-TokenGuard-Session-ID` | Recommended for agents | Loop detection scope |
 | `X-TokenGuard-Team-ID` | No | Charge a specific team pool/cap (must be an active membership) |
 | Provider auth (`Authorization`, `x-api-key`, …) | Yes | Passed through to upstream |
+
+Clients that can send only one credential (Cursor **Override OpenAI Base URL**) may put both keys in `Authorization`:
+
+```http
+Authorization: Bearer tg_<key>:<provider-key>
+```
+
+TokenGuard uses `tg_…` for budget and usage, forwards only `<provider-key>` upstream, and assigns a per-key session so loop detection still runs. Set `TOKENGUARD_DEFAULT_PROVIDER` to the third-party route. Normal clients keep the two-header form below.
 
 TokenGuard strips its own `X-TokenGuard-*` headers before forwarding.
 

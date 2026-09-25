@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -206,6 +207,7 @@ func newHarness(t *testing.T, opts harnessOpts) *harness {
 		mux.HandleFunc("/portal/api/teams/members/cap", handler.HandlePortalUpdateMemberCap)
 		mux.HandleFunc("/portal/api/teams/members/remove", handler.HandlePortalRemoveTeamMember)
 		mux.HandleFunc("/portal/api/teams/invites", handler.HandlePortalListPendingInvites)
+		mux.HandleFunc("/portal/api/teams/invites/revoke", handler.HandlePortalRevokePendingInvite)
 		mux.HandleFunc("/portal/api/usage", handler.HandlePortalListUsage)
 		mux.HandleFunc("/portal/api/overview", handler.HandlePortalOverview)
 	}
@@ -478,7 +480,7 @@ func (s *memoryStore) ReserveBudget(ctx context.Context, userID string, amountMi
 	if onTeam {
 		memberAvail := scope.cap - scope.spent - scope.reserved
 		teamAvail := scope.teamLimit - scope.teamSpent - scope.teamReserved
-		if memberAvail < amountMicroUSD || teamAvail < amountMicroUSD {
+		if memberAvail <= 0 || teamAvail <= 0 || memberAvail < amountMicroUSD || teamAvail < amountMicroUSD {
 			return billing.Budget{
 				UserID:           userID,
 				LimitMicroUSD:    scope.cap,
@@ -497,7 +499,7 @@ func (s *memoryStore) ReserveBudget(ctx context.Context, userID string, amountMi
 			SpentMicroUSD: scope.spent, ReservedMicroUSD: scope.reserved + amountMicroUSD,
 		}, true, nil
 	}
-	if amountMicroUSD > b.AvailableMicroUSD() {
+	if b.AvailableMicroUSD() <= 0 || amountMicroUSD > b.AvailableMicroUSD() {
 		return b, false, nil
 	}
 	b.ReservedMicroUSD += amountMicroUSD
@@ -943,8 +945,8 @@ func (s *memoryStore) CreateTeam(ctx context.Context, ownerUserID, name string, 
 		s.teams = map[string]memTeam{}
 		s.members = map[string]memTeamMember{}
 	}
-	if limitMicroUSD <= 0 {
-		limitMicroUSD = 1_000_000
+	if limitMicroUSD < 0 {
+		return billing.Team{}, errors.New("team budget cannot be negative")
 	}
 	id := s.nextID("team")
 	s.teams[id] = memTeam{id: id, name: name, owner: ownerUserID, limit: limitMicroUSD}
@@ -1145,6 +1147,31 @@ func (s *memoryStore) ListPendingInvitesForTeam(ctx context.Context, ownerUserID
 		})
 	}
 	return out, nil
+}
+
+func (s *memoryStore) RevokePendingInvite(ctx context.Context, ownerUserID, teamID, inviteID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ownerUserID = strings.TrimSpace(ownerUserID)
+	teamID = strings.TrimSpace(teamID)
+	inviteID = strings.TrimSpace(inviteID)
+	if ownerUserID == "" || teamID == "" || inviteID == "" {
+		return errors.New("team id and invite id are required")
+	}
+	t, ok := s.teams[teamID]
+	if !ok {
+		return billing.ErrTeamNotFound
+	}
+	if t.owner != ownerUserID {
+		return billing.ErrNotTeamOwner
+	}
+	inv, ok := s.invites[inviteID]
+	if !ok || inv.teamID != teamID || inv.status != "pending" {
+		return billing.ErrTeamInviteNotFound
+	}
+	inv.status = "revoked"
+	s.invites[inviteID] = inv
+	return nil
 }
 
 func (s *memoryStore) ListPortalUsage(ctx context.Context, userID, teamID string, limit int) ([]billing.UsageEvent, error) {

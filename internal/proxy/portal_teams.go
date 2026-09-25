@@ -180,6 +180,38 @@ func (h *Handler) HandlePortalListPendingInvites(w http.ResponseWriter, r *http.
 	writePortalJSON(w, http.StatusOK, map[string]any{"invites": invites})
 }
 
+func (h *Handler) HandlePortalRevokePendingInvite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	userID, ok := h.requirePortalUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		TeamID   string `json:"team_id"`
+		InviteID string `json:"invite_id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil ||
+		strings.TrimSpace(req.TeamID) == "" || strings.TrimSpace(req.InviteID) == "" {
+		writePortalJSON(w, http.StatusBadRequest, map[string]string{"error": "team_id and invite_id are required"})
+		return
+	}
+	if err := h.accountStore.RevokePendingInvite(r.Context(), userID, req.TeamID, req.InviteID); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, billing.ErrNotTeamOwner) || errors.Is(err, billing.ErrTeamNotFound) {
+			status = http.StatusForbidden
+		}
+		if errors.Is(err, billing.ErrTeamInviteNotFound) {
+			status = http.StatusNotFound
+		}
+		writePortalJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writePortalJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (h *Handler) HandlePortalListUsage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

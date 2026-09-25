@@ -244,6 +244,7 @@ func (h *Handler) checkBudget(parent context.Context, apiKeySecret string, analy
 	result.estimate = estimate
 
 	// Personal budget (default): hard-stop when nothing left, even if estimate is $0.
+	// Team remaining is enforced inside ReserveBudget (including $0 estimates).
 	if spendTeamID == "" {
 		available := budget.AvailableMicroUSD()
 		if available <= 0 || estimate.EstimatedTotalCostMicroUSD > available {
@@ -252,13 +253,9 @@ func (h *Handler) checkBudget(parent context.Context, apiKeySecret string, analy
 		}
 	}
 
-	var reservedBudget billing.Budget
-	var reserved bool
-	err = billing.Retry(dbCtx, 3, func(ctx context.Context) error {
-		var reserveErr error
-		reservedBudget, reserved, reserveErr = h.budgetStore.ReserveBudget(ctx, apiKey.UserID, estimate.EstimatedTotalCostMicroUSD)
-		return reserveErr
-	})
+	// Reserve is not idempotent — never retry. A Turso timeout after commit
+	// would otherwise double-hold the same request's budget.
+	reservedBudget, reserved, err := h.budgetStore.ReserveBudget(dbCtx, apiKey.UserID, estimate.EstimatedTotalCostMicroUSD)
 	result.budget = reservedBudget
 	result.affordable = reserved
 	if reserved {
@@ -388,29 +385,20 @@ func (h *Handler) settleUsageAsync(event billing.UsageEvent, reservedMicroUSD in
 		return
 	}
 	go func() {
-		if err := h.settleUsageWithRetry(event, reservedMicroUSD, spendTeamID); err != nil {
+		if err := h.settleReservedUsageOnce(event, reservedMicroUSD, spendTeamID); err != nil {
 			log.Printf("async reserved usage settlement failed user_id=%s status=%s error=%v", event.UserID, event.Status, err)
 			h.releaseReservationSync(event.UserID, reservedMicroUSD, spendTeamID)
 		}
 	}()
 }
 
-func (h *Handler) settleUsageWithRetry(event billing.UsageEvent, reservedMicroUSD int64, spendTeamID string) error {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), h.asyncLogTimeout)
-		ctx = billing.WithSpendTeamID(ctx, spendTeamID)
-		err := h.budgetStore.SettleReservedUsage(ctx, event, reservedMicroUSD)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if attempt < 2 {
-			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
-		}
-	}
-	return lastErr
+func (h *Handler) settleReservedUsageOnce(event billing.UsageEvent, reservedMicroUSD int64, spendTeamID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), h.asyncLogTimeout)
+	defer cancel()
+	ctx = billing.WithSpendTeamID(ctx, spendTeamID)
+	// Settle inserts a usage row and increments spent. Retrying after a
+	// committed-but-timed-out response would double-charge.
+	return h.budgetStore.SettleReservedUsage(ctx, event, reservedMicroUSD)
 }
 
 func (h *Handler) releaseReservationAsync(userID string, reservedMicroUSD int64, spendTeamID string) {

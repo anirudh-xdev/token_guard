@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 )
@@ -265,9 +264,10 @@ WHERE u.id = ? AND u.status = 'active'`, userID).Scan(
 			view.ActiveKeyCount++
 		}
 	}
-	// Auto-accept any pending team invites for this email (member signed up after invite).
+	// Auto-accept pending invites for this stored email. Clerk only persists
+	// verified emails, so this does not join on an unproven address.
 	if _, err := s.AcceptPendingInvitesForEmail(ctx, userID, view.Email); err != nil {
-		log.Printf("accept pending team invites: %v", err)
+		return AccountView{}, fmt.Errorf("accept pending team invites: %w", err)
 	}
 	teams, err := s.ListTeamsForUser(ctx, userID)
 	if err != nil {

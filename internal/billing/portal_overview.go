@@ -175,6 +175,10 @@ ORDER BY substr(created_at, 1, 10)`
 		}
 		overview.Daily = append(overview.Daily, point)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return PortalOverview{}, err
+	}
 	if err := rows.Close(); err != nil {
 		return PortalOverview{}, err
 	}

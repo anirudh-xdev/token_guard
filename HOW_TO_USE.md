@@ -514,7 +514,7 @@ For each application using TokenGuard:
 
 - Replace the provider base URL with the TokenGuard URL (`…/v1` for OpenAI-compatible SDKs).
 - Keep sending the provider API key using the provider's normal auth header.
-- Add `X-TokenGuard-API-Key`.
+- Add `X-TokenGuard-API-Key`. Clients with only one key field (Cursor) may send `Authorization: Bearer tg_<key>:<provider-key>` instead; set `TOKENGUARD_DEFAULT_PROVIDER` to that provider.
 - Add `X-TokenGuard-Provider` if using multiple providers.
 - Add `X-TokenGuard-Session-ID` for agents or long-running workflows.
 - Make sure the model exists in the pricing catalog (sync OpenRouter or upsert).
