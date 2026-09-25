@@ -154,6 +154,8 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 			"spent_microusd":          budgetResult.budget.SpentMicroUSD,
 			"limit_microusd":          budgetResult.budget.LimitMicroUSD,
 			"estimated_cost_microusd": budgetResult.estimate.EstimatedTotalCostMicroUSD,
+			"input_tokens":            analysis.InputTokens,
+			"max_output_tokens":       analysis.MaxOutputTokens,
 			"model":                   modelOrUnknown(analysis.Model),
 		})
 		h.logUsageAsync(billing.UsageEvent{

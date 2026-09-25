@@ -178,6 +178,8 @@ Content-Type: application/json
   "error": "TokenGuard: budget exceeded",
   "available_microusd": 1200,
   "estimated_cost_microusd": 5000,
+  "input_tokens": 1200,
+  "max_output_tokens": 4096,
   "model": "gpt-4o-mini"
 }
 ```
