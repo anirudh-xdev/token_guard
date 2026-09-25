@@ -12,31 +12,31 @@ import (
 )
 
 const (
-	defaultListenAddr          = ":8080"
-	defaultUpstreamURL         = "https://api.openai.com"
-	defaultProviderName        = "openai"
-	defaultReadHeaderTimeout   = 2 * time.Second
-	defaultShutdownTimeout     = 5 * time.Second
-	listenAddrEnv              = "TOKENGUARD_LISTEN_ADDR"
-	upstreamURLEnv             = "TOKENGUARD_UPSTREAM_URL"
-	defaultProviderEnv         = "TOKENGUARD_DEFAULT_PROVIDER"
-	providerRoutesEnv          = "TOKENGUARD_PROVIDER_ROUTES"
-	tokenizerModelEnv          = "TOKENGUARD_TOKENIZER_MODEL"
-	guardEnabledEnv            = "TOKENGUARD_GUARD_ENABLED"
-	managementEnabledEnv       = "TOKENGUARD_MGMT_ENABLED"
-	portalEnabledEnv           = "TOKENGUARD_PORTAL_ENABLED"
-	portalDevLoginEnv          = "TOKENGUARD_PORTAL_DEV_LOGIN"
-	portalBaseURLEnv           = "TOKENGUARD_PORTAL_BASE_URL"
-	portalDefaultBudgetUSDEnv  = "TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD"
-	portalMaxKeysEnv           = "TOKENGUARD_PORTAL_MAX_KEYS"
-	portalSessionTTLHoursEnv   = "TOKENGUARD_PORTAL_SESSION_TTL_HOURS"
-	portalSecureCookiesEnv     = "TOKENGUARD_PORTAL_SECURE_COOKIES"
-	portalAppURLEnv            = "TOKENGUARD_PORTAL_APP_URL"
-	portalCORSOriginsEnv       = "TOKENGUARD_PORTAL_CORS_ORIGINS"
-	dashboardAppURLEnv         = "TOKENGUARD_DASHBOARD_APP_URL"
-	docsAppURLEnv              = "TOKENGUARD_DOCS_APP_URL"
-	clerkPublishableKeyEnv     = "TOKENGUARD_CLERK_PUBLISHABLE_KEY"
-	clerkSecretKeyEnv          = "TOKENGUARD_CLERK_SECRET_KEY"
+	defaultListenAddr         = ":8080"
+	defaultUpstreamURL        = "https://api.openai.com"
+	defaultProviderName       = "openai"
+	defaultReadHeaderTimeout  = 2 * time.Second
+	defaultShutdownTimeout    = 5 * time.Second
+	listenAddrEnv             = "TOKENGUARD_LISTEN_ADDR"
+	upstreamURLEnv            = "TOKENGUARD_UPSTREAM_URL"
+	defaultProviderEnv        = "TOKENGUARD_DEFAULT_PROVIDER"
+	providerRoutesEnv         = "TOKENGUARD_PROVIDER_ROUTES"
+	tokenizerModelEnv         = "TOKENGUARD_TOKENIZER_MODEL"
+	guardEnabledEnv           = "TOKENGUARD_GUARD_ENABLED"
+	managementEnabledEnv      = "TOKENGUARD_MGMT_ENABLED"
+	portalEnabledEnv          = "TOKENGUARD_PORTAL_ENABLED"
+	portalDevLoginEnv         = "TOKENGUARD_PORTAL_DEV_LOGIN"
+	portalBaseURLEnv          = "TOKENGUARD_PORTAL_BASE_URL"
+	portalDefaultBudgetUSDEnv = "TOKENGUARD_PORTAL_DEFAULT_BUDGET_USD"
+	portalMaxKeysEnv          = "TOKENGUARD_PORTAL_MAX_KEYS"
+	portalSessionTTLHoursEnv  = "TOKENGUARD_PORTAL_SESSION_TTL_HOURS"
+	portalSecureCookiesEnv    = "TOKENGUARD_PORTAL_SECURE_COOKIES"
+	portalAppURLEnv           = "TOKENGUARD_PORTAL_APP_URL"
+	portalCORSOriginsEnv      = "TOKENGUARD_PORTAL_CORS_ORIGINS"
+	dashboardAppURLEnv        = "TOKENGUARD_DASHBOARD_APP_URL"
+	docsAppURLEnv             = "TOKENGUARD_DOCS_APP_URL"
+	clerkPublishableKeyEnv    = "TOKENGUARD_CLERK_PUBLISHABLE_KEY"
+	clerkSecretKeyEnv         = "TOKENGUARD_CLERK_SECRET_KEY"
 	// Also accept standard Clerk env names.
 	clerkPublishableKeyAltEnv  = "CLERK_PUBLISHABLE_KEY"
 	clerkSecretKeyAltEnv       = "CLERK_SECRET_KEY"
@@ -111,7 +111,7 @@ func ConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 
-	defaultBudgetUSD, err := floatFromEnv(portalDefaultBudgetUSDEnv, 5)
+	defaultBudgetUSD, err := floatFromEnv(portalDefaultBudgetUSDEnv, 20)
 	if err != nil {
 		return Config{}, err
 	}

@@ -150,7 +150,7 @@ func NewHandler(cfg Config, opts ...HandlerOption) (*Handler, error) {
 
 	defaultBudget := cfg.PortalDefaultBudgetMicroUSD
 	if defaultBudget <= 0 {
-		defaultBudget = 5_000_000 // $5
+		defaultBudget = 20_000_000 // $20
 	}
 	maxKeys := cfg.PortalMaxKeys
 	if maxKeys <= 0 {

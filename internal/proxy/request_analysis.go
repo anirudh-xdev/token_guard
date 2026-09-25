@@ -175,6 +175,28 @@ func analyzeRequest(r *http.Request, body []byte, encoder tokenEncoder, defaultM
 	return analysis, nil
 }
 
+func clampMaxOutputTokens(body []byte, maxOutput int64) ([]byte, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(body, &root); err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(maxOutput)
+	if err != nil {
+		return nil, err
+	}
+	set := false
+	for _, field := range []string{"max_completion_tokens", "max_tokens", "max_output_tokens"} {
+		if _, ok := root[field]; ok {
+			root[field] = raw
+			set = true
+		}
+	}
+	if !set {
+		root["max_tokens"] = raw
+	}
+	return json.Marshal(root)
+}
+
 func sessionIDFromHeaders(header http.Header) string {
 	if sessionID := strings.TrimSpace(header.Get(tokenGuardSessionHeader)); sessionID != "" {
 		return sessionID

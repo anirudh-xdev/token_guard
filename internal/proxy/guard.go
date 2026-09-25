@@ -25,12 +25,14 @@ type guardContext struct {
 }
 
 type budgetCheckResult struct {
-	apiKey     billing.APIKey
-	budget     billing.Budget
-	estimate   models.CostEstimate
-	affordable bool
-	reserved   int64
-	err        error
+	apiKey               billing.APIKey
+	budget               billing.Budget
+	estimate             models.CostEstimate
+	affordable           bool
+	reserved             int64
+	reservedOutputTokens int64
+	outputClamped        bool
+	err                  error
 }
 
 type loopCheckResult struct {
@@ -154,6 +156,8 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 			"spent_microusd":          budgetResult.budget.SpentMicroUSD,
 			"limit_microusd":          budgetResult.budget.LimitMicroUSD,
 			"estimated_cost_microusd": budgetResult.estimate.EstimatedTotalCostMicroUSD,
+			"input_cost_microusd":     budgetResult.estimate.InputCostMicroUSD,
+			"output_reserve_microusd": budgetResult.estimate.EstimatedOutputCostMicroUSD,
 			"input_tokens":            analysis.InputTokens,
 			"max_output_tokens":       analysis.MaxOutputTokens,
 			"model":                   modelOrUnknown(analysis.Model),
@@ -183,6 +187,28 @@ func (h *Handler) preflight(w http.ResponseWriter, r *http.Request) (*guardConte
 	} else {
 		w.Header().Set("X-TokenGuard-Loop-Check", fmt.Sprintf("ok;count=%d;threshold=%d", loopResult.result.Count, loopResult.result.Threshold))
 	}
+
+	if budgetResult.outputClamped {
+		rewritten, err := clampMaxOutputTokens(body, budgetResult.reservedOutputTokens)
+		if err != nil {
+			h.releaseReservationAsync(budgetResult.apiKey.UserID, budgetResult.reserved, spendTeamID)
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "TokenGuard: could not cap output tokens to the remaining budget",
+				"code":  "bad_request",
+			})
+			return nil, false
+		}
+		body = rewritten
+		analysis.MaxOutputTokens = budgetResult.reservedOutputTokens
+	}
+	w.Header().Set("X-TokenGuard-Estimate", fmt.Sprintf(
+		"input_tokens=%d;reserved_output_tokens=%d;estimated_microusd=%d;input_microusd=%d;output_reserve_microusd=%d",
+		analysis.InputTokens,
+		budgetResult.reservedOutputTokens,
+		budgetResult.estimate.EstimatedTotalCostMicroUSD,
+		budgetResult.estimate.InputCostMicroUSD,
+		budgetResult.estimate.EstimatedOutputCostMicroUSD,
+	))
 
 	stripTokenGuardHeaders(r)
 	restoreRequestBody(r, body)
@@ -244,14 +270,29 @@ func (h *Handler) checkBudget(parent context.Context, apiKeySecret string, analy
 		return result
 	}
 	result.estimate = estimate
+	result.reservedOutputTokens = analysis.MaxOutputTokens
 
 	// Personal budget (default): hard-stop when nothing left, even if estimate is $0.
 	// Team remaining is enforced inside ReserveBudget (including $0 estimates).
+	// A client max_tokens reserve is a ceiling, not the bill. If the prompt fits
+	// but that ceiling does not, shrink the forwarded output cap to the room left.
 	if spendTeamID == "" {
 		available := budget.AvailableMicroUSD()
-		if available <= 0 || estimate.EstimatedTotalCostMicroUSD > available {
+		if available <= 0 {
 			result.affordable = false
 			return result
+		}
+		if estimate.EstimatedTotalCostMicroUSD > available {
+			clamped, ok := clampEstimateToBudget(h, analysis, estimate, available)
+			if !ok {
+				result.affordable = false
+				return result
+			}
+			estimate = clamped.estimate
+			result.estimate = estimate
+			result.reservedOutputTokens = clamped.outputTokens
+			result.outputClamped = true
+			analysis.MaxOutputTokens = clamped.outputTokens
 		}
 	}
 
@@ -265,6 +306,39 @@ func (h *Handler) checkBudget(parent context.Context, apiKeySecret string, analy
 	}
 	result.err = err
 	return result
+}
+
+type clampedEstimate struct {
+	estimate     models.CostEstimate
+	outputTokens int64
+}
+
+// clampEstimateToBudget keeps the real input cost and lowers the output
+// reserve until it fits in available. Input that already exceeds the budget
+// cannot be clamped.
+func clampEstimateToBudget(h *Handler, analysis requestAnalysis, full models.CostEstimate, available int64) (clampedEstimate, bool) {
+	if full.InputCostMicroUSD > available {
+		return clampedEstimate{}, false
+	}
+	outputTokens := analysis.MaxOutputTokens
+	if full.OutputCostPer1KMicroUSD > 0 {
+		room := available - full.InputCostMicroUSD
+		affordable := room * 1000 / full.OutputCostPer1KMicroUSD
+		if affordable < outputTokens {
+			outputTokens = affordable
+		}
+	}
+	if outputTokens < 0 {
+		outputTokens = 0
+	}
+	if outputTokens == 0 && analysis.MaxOutputTokens > 0 {
+		return clampedEstimate{}, false
+	}
+	estimate, err := h.pricing.EstimateProvider(analysis.Provider, analysis.Model, analysis.InputTokens, outputTokens)
+	if err != nil || estimate.EstimatedTotalCostMicroUSD > available {
+		return clampedEstimate{}, false
+	}
+	return clampedEstimate{estimate: estimate, outputTokens: outputTokens}, true
 }
 
 func (h *Handler) dbOpTimeout() time.Duration {
